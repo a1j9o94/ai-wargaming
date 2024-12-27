@@ -2,73 +2,197 @@
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
-    provider = "prisma-client-js"
+  provider = "prisma-client-js"
 }
 
 datasource db {
-    provider = "sqlite"
-    // NOTE: When using mysql or sqlserver, uncomment the @db.Text annotations in model Account below
-    // Further reading:
-    // https://next-auth.js.org/adapters/prisma#create-the-prisma-schema
-    // https://www.prisma.io/docs/reference/api-reference/prisma-schema-reference#string
-    url      = env("DATABASE_URL")
+  provider = "sqlite"
+  // NOTE: When using mysql or sqlserver, uncomment the @db.Text annotations in model Account below
+  // Further reading:
+  // https://next-auth.js.org/adapters/prisma#create-the-prisma-schema
+  // https://www.prisma.io/docs/reference/api-reference/prisma-schema-reference#string
+  url      = env("DATABASE_URL")
 }
 
 model Post {
-    id        Int      @id @default(autoincrement())
-    name      String
-    createdAt DateTime @default(now())
-    updatedAt DateTime @updatedAt
+  id        Int      @id @default(autoincrement())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-    createdBy   User   @relation(fields: [createdById], references: [id])
-    createdById String
+  createdBy   User   @relation(fields: [createdById], references: [id])
+  createdById String
 
-    @@index([name])
+  @@index([name])
 }
 
 // Necessary for Next auth
 model Account {
-    id                       String  @id @default(cuid())
-    userId                   String
-    type                     String
-    provider                 String
-    providerAccountId        String
-    refresh_token            String? // @db.Text
-    access_token             String? // @db.Text
-    expires_at               Int?
-    token_type               String?
-    scope                    String?
-    id_token                 String? // @db.Text
-    session_state            String?
-    user                     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-    refresh_token_expires_in Int?
+  id                       String  @id @default(cuid())
+  userId                   String
+  type                     String
+  provider                 String
+  providerAccountId        String
+  refresh_token            String? // @db.Text
+  access_token             String? // @db.Text
+  expires_at               Int?
+  token_type               String?
+  scope                    String?
+  id_token                 String? // @db.Text
+  session_state            String?
+  user                     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refresh_token_expires_in Int?
 
-    @@unique([provider, providerAccountId])
+  @@unique([provider, providerAccountId])
 }
 
 model Session {
-    id           String   @id @default(cuid())
-    sessionToken String   @unique
-    userId       String
-    expires      DateTime
-    user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model User {
-    id            String    @id @default(cuid())
-    name          String?
-    email         String?   @unique
-    emailVerified DateTime?
-    image         String?
-    accounts      Account[]
-    sessions      Session[]
-    posts         Post[]
+  id              String            @id @default(cuid())
+  name            String?
+  email           String?           @unique
+  emailVerified   DateTime?
+  image           String?
+  accounts        Account[]
+  sessions        Session[]
+  posts           Post[]
+  games           Game[] // Games this user has participated in
+  messages        ChatMessage[] // Messages sent by this user
+  GameParticipant GameParticipant[]
 }
 
 model VerificationToken {
-    identifier String
-    token      String   @unique
-    expires    DateTime
+  identifier String
+  token      String   @unique
+  expires    DateTime
 
-    @@unique([identifier, token])
+  @@unique([identifier, token])
+}
+
+// Game Models
+model Game {
+  id           Int               @id @default(autoincrement())
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  currentRound Int               @default(1)
+  phase        String // SETUP, PROPOSAL, DISCUSSION, VOTING, RESOLVE, COMPLETED
+  participants GameParticipant[]
+  proposals    Proposal[]
+  discussions  Discussion[]
+  logEntries   LogEntry[]
+  User         User?             @relation(fields: [userId], references: [id])
+  userId       String?
+}
+
+model GameParticipant {
+  id                 Int        @id @default(autoincrement())
+  game               Game       @relation(fields: [gameId], references: [id])
+  gameId             Int
+  user               User       @relation(fields: [userId], references: [id])
+  userId             String
+  civilization       String
+  might              Int        @default(80)
+  economy            Int        @default(80)
+  publicObjective    Objective? @relation("PublicObjective")
+  privateObjective   Objective? @relation("PrivateObjective")
+  remainingProposals Int        @default(2)
+
+  // Remove the old proposal relations and add the new one
+  proposalParticipations  ProposalParticipant[]
+  votes                   Vote[]
+  participatedDiscussions Discussion[]          @relation("DiscussionParticipants")
+
+  @@unique([gameId, userId])
+}
+
+model Objective {
+  id                  Int     @id @default(autoincrement())
+  description         String
+  isPublic            Boolean
+  targetMight         Int?
+  targetEconomy       Int?
+  targetParticipantId Int?
+  type                String // TRADE_DEAL, MILITARY_ALLIANCE, SABOTAGE, ECONOMIC_GROWTH, MILITARY_GROWTH
+  status              String  @default("PENDING") // PENDING, COMPLETED, FAILED
+
+  // Relations
+  publicFor    GameParticipant? @relation("PublicObjective", fields: [publicForId], references: [id])
+  publicForId  Int?             @unique
+  privateFor   GameParticipant? @relation("PrivateObjective", fields: [privateForId], references: [id])
+  privateForId Int?             @unique
+}
+
+model Proposal {
+  id          Int      @id @default(autoincrement())
+  createdAt   DateTime @default(now())
+  game        Game     @relation(fields: [gameId], references: [id])
+  gameId      Int
+  roundNumber Int
+  description String
+  type        String // TRADE, MILITARY, ALLIANCE
+  isPublic    Boolean
+  status      String   @default("PENDING") // PENDING, ACCEPTED, REJECTED
+
+  // Replace the old relations with the new one
+  participants ProposalParticipant[]
+  votes        Vote[]
+}
+
+// New join table to handle the relationship
+model ProposalParticipant {
+  proposal      Proposal        @relation(fields: [proposalId], references: [id])
+  proposalId    Int
+  participant   GameParticipant @relation(fields: [participantId], references: [id])
+  participantId Int
+  role          String // "CREATOR" or "RECIPIENT"
+
+  @@id([proposalId, participantId])
+}
+
+model Vote {
+  id            Int             @id @default(autoincrement())
+  proposal      Proposal        @relation(fields: [proposalId], references: [id])
+  proposalId    Int
+  participant   GameParticipant @relation(fields: [participantId], references: [id])
+  participantId Int
+  support       Boolean
+
+  @@unique([proposalId, participantId])
+}
+
+model Discussion {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+  game      Game     @relation(fields: [gameId], references: [id])
+  gameId    Int
+
+  // Relations
+  participants GameParticipant[] @relation("DiscussionParticipants")
+  messages     ChatMessage[]
+}
+
+model ChatMessage {
+  id           Int        @id @default(autoincrement())
+  createdAt    DateTime   @default(now())
+  content      String
+  discussion   Discussion @relation(fields: [discussionId], references: [id])
+  discussionId Int
+  sender       User       @relation(fields: [senderId], references: [id])
+  senderId     String
+}
+
+model LogEntry {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+  game      Game     @relation(fields: [gameId], references: [id])
+  gameId    Int
+  time      String
+  event     String
 }
