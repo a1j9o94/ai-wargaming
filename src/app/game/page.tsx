@@ -1,7 +1,15 @@
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { auth } from "~/server/auth";
+import { redirect } from "next/navigation";
 
-export default function GamePage() {
+export default async function GamePage() {
+  // Server-side auth check
+  const session = await auth();
+  if (!session?.user) {
+    redirect("/api/auth/signin");
+  }
+
   // Placeholder data - will be replaced with real game state
   const opponents = [
     { id: 1, name: "Centauri Republic", avatar: "/avatars/centauri.jpg", status: "Active", might: 85, economy: 92 },

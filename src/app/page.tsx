@@ -23,7 +23,7 @@ export default function Home() {
           <p className="mx-auto mb-12 max-w-2xl text-xl text-gray-400 leading-relaxed">
             Navigate interstellar politics, forge alliances, and shape the destiny of civilizations in this AI-driven diplomatic simulation
           </p>
-          <Link href="/game/new">
+          <Link href="/game">
             <Button 
               className="group relative px-8 py-6 text-lg font-semibold bg-[#1E3A8A] hover:bg-[#2B4C9F] transition-all duration-300"
             >
