@@ -1,0 +1,6 @@
+When installing from shadcn/ui, use the following command:
+npx shadcn@latest add <component>
+
+When adding components that are specific to a page, create a _components folder in the page folder and add the component there.
+
+Ensure to use strick type linting for all files.

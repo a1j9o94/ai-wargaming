@@ -27,7 +27,7 @@ export function UserNav({ user }: UserNavProps) {
           Command Settings
         </Button>
       </Link>
-      <Link href="/api/auth/signout">
+      <Link href="/logout">
         <Button variant="ghost" className="text-sm font-medium text-[#60A5FA] hover:text-[#60A5FA]/80 hover:bg-[#1E3A8A]/20">
           Logout
         </Button>

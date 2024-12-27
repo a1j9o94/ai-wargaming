@@ -28,7 +28,7 @@ export async function Header() {
             {session ? (
               <UserNav user={session.user} />
             ) : (
-              <Link href="/api/auth/signin">
+              <Link href="/login">
                 <Button 
                   className="bg-[#1E3A8A] hover:bg-[#2B4C9F] text-[#F3F4F6]"
                 >

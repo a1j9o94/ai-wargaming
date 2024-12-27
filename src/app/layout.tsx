@@ -21,9 +21,18 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={`font-sans ${inter.variable} bg-[#030712]`}>
-        <Header />
-        {children}
+      <body className={`font-sans ${inter.variable} min-h-screen bg-[#030712] relative`}>
+        {/* Fixed Background Elements */}
+        <div className="fixed inset-0 bg-gradient-to-b from-[#0A0F1C] to-transparent pointer-events-none" />
+        <div className="fixed inset-0 bg-[url('/grid.svg')] opacity-10 pointer-events-none" />
+        
+        {/* Content */}
+        <div className="relative">
+          <Header />
+          <main className="pt-16">
+            {children}
+          </main>
+        </div>
       </body>
     </html>
   );

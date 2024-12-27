@@ -66,10 +66,7 @@ function LoginContent() {
 
 export default function LoginPage() {
   return (
-    <div className="flex min-h-[calc(100vh-4rem)] flex-col items-center justify-center bg-[#030712]">
-      <div className="absolute inset-0 bg-gradient-to-b from-[#0A0F1C] to-transparent" />
-      <div className="absolute inset-0 bg-[url('/grid.svg')] opacity-10" />
-      
+    <div className="flex h-[calc(100vh-4rem)] flex-col items-center justify-center">
       <Suspense fallback={
         <div className="relative w-full max-w-md space-y-8 rounded-lg bg-[#0A0F1C]/80 p-8 text-center shadow-xl backdrop-blur-sm border border-[#1E3A8A]/30">
           <div className="h-8 w-8 mx-auto rounded-full border-2 border-t-[#60A5FA] border-[#1E3A8A]/30 animate-spin" />
