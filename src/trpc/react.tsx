@@ -1,7 +1,12 @@
 "use client";
 
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
-import { loggerLink, unstable_httpBatchStreamLink } from "@trpc/client";
+import { 
+  loggerLink, 
+  splitLink,
+  unstable_httpBatchStreamLink, 
+  unstable_httpSubscriptionLink 
+} from "@trpc/client";
 import { createTRPCReact } from "@trpc/react-query";
 import { type inferRouterInputs, type inferRouterOutputs } from "@trpc/server";
 import { useState } from "react";
@@ -13,31 +18,19 @@ import { createQueryClient } from "./query-client";
 let clientQueryClientSingleton: QueryClient | undefined = undefined;
 const getQueryClient = () => {
   if (typeof window === "undefined") {
-    // Server: always make a new query client
     return createQueryClient();
   }
-  // Browser: use singleton pattern to keep the same query client
   return (clientQueryClientSingleton ??= createQueryClient());
 };
 
 export const api = createTRPCReact<AppRouter>();
 
-/**
- * Inference helper for inputs.
- *
- * @example type HelloInput = RouterInputs['example']['hello']
- */
 export type RouterInputs = inferRouterInputs<AppRouter>;
-
-/**
- * Inference helper for outputs.
- *
- * @example type HelloOutput = RouterOutputs['example']['hello']
- */
 export type RouterOutputs = inferRouterOutputs<AppRouter>;
 
 export function TRPCReactProvider(props: { children: React.ReactNode }) {
   const queryClient = getQueryClient();
+  const baseUrl = getBaseUrl();
 
   const [trpcClient] = useState(() =>
     api.createClient({
@@ -47,14 +40,16 @@ export function TRPCReactProvider(props: { children: React.ReactNode }) {
             process.env.NODE_ENV === "development" ||
             (op.direction === "down" && op.result instanceof Error),
         }),
-        unstable_httpBatchStreamLink({
-          transformer: SuperJSON,
-          url: getBaseUrl() + "/api/trpc",
-          headers: () => {
-            const headers = new Headers();
-            headers.set("x-trpc-source", "nextjs-react");
-            return headers;
-          },
+        splitLink({
+          condition: (op) => op.type === 'subscription',
+          true: unstable_httpSubscriptionLink({
+            url: `${baseUrl}/api/trpc`,
+            transformer: SuperJSON,
+          }),
+          false: unstable_httpBatchStreamLink({
+            url: `${baseUrl}/api/trpc`,
+            transformer: SuperJSON,
+          }),
         }),
       ],
     })

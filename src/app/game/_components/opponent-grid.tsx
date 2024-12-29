@@ -1,21 +1,34 @@
 import { OpponentCard } from "./opponent-card";
-import { type Opponent } from "~/types/game";
+import { type Participant } from "~/types/game";
 
 interface OpponentGridProps {
-  opponents: Opponent[];
-  onDiscuss: (opponentId: number) => void;
-  onPropose: (opponentId: number) => void;
+  opponents: Participant[];
+  gameId: string;
+  currentParticipantId: string;
+  onMakeProposal: (data: {
+    description: string;
+    type: "TRADE" | "MILITARY" | "ALLIANCE";
+    isPublic: boolean;
+    recipients: string[];
+  }) => Promise<void>;
+  onOpenDiscussion: (participantIds: string[]) => void;
 }
 
-export function OpponentGrid({ opponents, onDiscuss, onPropose }: OpponentGridProps) {
+export function OpponentGrid({ 
+  opponents, 
+  currentParticipantId,
+  onMakeProposal,
+  onOpenDiscussion
+}: OpponentGridProps) {
   return (
-    <div className="grid grid-cols-2 gap-4 flex-1 min-h-0">
+    <div className="grid grid-cols-1 gap-6 md:grid-cols-2 flex-1 min-h-0">
       {opponents.map((opponent) => (
         <OpponentCard 
           key={opponent.id} 
           opponent={opponent}
-          onDiscuss={onDiscuss}
-          onPropose={onPropose}
+          currentParticipantId={currentParticipantId}
+          onMakeProposal={onMakeProposal}
+          onOpenDiscussion={onOpenDiscussion}
         />
       ))}
     </div>

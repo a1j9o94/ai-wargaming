@@ -1,146 +1,143 @@
-import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { type Opponent } from "~/types/game";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
+import { useState, type ChangeEvent } from "react";
+import { type Participant, type OnSubmitProposalFunction } from "~/types/game";
 
 interface ProposalDialogProps {
   open: boolean;
   onClose: () => void;
-  onSubmit: (proposal: {
-    description: string;
-    type: 'TRADE' | 'MILITARY' | 'ALLIANCE';
-    isPublic: boolean;
-    recipients: number[];
-  }) => void;
-  opponents: Opponent[];
+  onSubmit: OnSubmitProposalFunction;
+  opponents?: Participant[];
 }
 
-export function ProposalDialog({ open, onClose, onSubmit, opponents }: ProposalDialogProps) {
+export function ProposalDialog({
+  open,
+  onClose,
+  onSubmit,
+  opponents = [],
+}: ProposalDialogProps) {
   const [description, setDescription] = useState("");
-  const [type, setType] = useState<'TRADE' | 'MILITARY' | 'ALLIANCE'>('TRADE');
-  const [isPublic, setIsPublic] = useState(true);
-  const [selectedOpponents, setSelectedOpponents] = useState<number[]>([]);
+  const [type, setType] = useState<"TRADE" | "MILITARY" | "ALLIANCE">("TRADE");
+  const [isPublic, setIsPublic] = useState(false);
+  const [selectedOpponents, setSelectedOpponents] = useState<string[]>([]);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSubmit({
+  const handleSubmit = async () => {
+    await onSubmit({
       description,
       type,
       isPublic,
       recipients: selectedOpponents,
     });
-    onClose();
+    setDescription("");
+    setType("TRADE");
+    setIsPublic(false);
+    setSelectedOpponents([]);
   };
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="bg-[#0A0F1C] border-[#1E3A8A]/20 text-white">
+      <DialogContent className="bg-[#1a1b23] border border-white/10 text-white shadow-xl">
         <DialogHeader>
-          <DialogTitle className="text-[#60A5FA]">New Proposal</DialogTitle>
+          <DialogTitle className="text-xl font-bold text-white">Make a Proposal</DialogTitle>
+          <DialogDescription className="text-white/70">
+            Create a new proposal to share with other players.
+          </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <div className="space-y-4">
           <div>
-            <label className="text-sm text-gray-400">Type</label>
-            <div className="flex space-x-2 mt-2">
-              {(['TRADE', 'MILITARY', 'ALLIANCE'] as const).map((t) => (
-                <Button
-                  key={t}
-                  type="button"
-                  variant={type === t ? 'default' : 'outline'}
-                  onClick={() => setType(t)}
-                  className={type === t 
-                    ? "bg-[#1E3A8A] hover:bg-[#2B4C9F] text-[#F3F4F6]"
-                    : "bg-[#1E3A8A]/10 border-[#1E3A8A]/30 hover:bg-[#1E3A8A]/20 text-[#60A5FA]"
-                  }
-                >
-                  {t}
-                </Button>
-              ))}
-            </div>
+            <Label className="text-white/70">Type</Label>
+            <Select
+              value={type}
+              onValueChange={(value: string) =>
+                setType(value as "TRADE" | "MILITARY" | "ALLIANCE")
+              }
+            >
+              <SelectTrigger className="bg-black/20 border-white/10 text-white">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-[#1a1b23] border-white/10 text-white">
+                <SelectItem value="TRADE" className="hover:bg-white/10 focus:bg-white/10">Trade</SelectItem>
+                <SelectItem value="MILITARY" className="hover:bg-white/10 focus:bg-white/10">Military</SelectItem>
+                <SelectItem value="ALLIANCE" className="hover:bg-white/10 focus:bg-white/10">Alliance</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           <div>
-            <label className="text-sm text-gray-400">Recipients</label>
-            <div className="grid grid-cols-2 gap-2 mt-2">
-              {opponents.map((opponent) => (
-                <Button
-                  key={opponent.id}
-                  type="button"
-                  variant={selectedOpponents.includes(opponent.id) ? 'default' : 'outline'}
-                  onClick={() => setSelectedOpponents(prev => 
-                    prev.includes(opponent.id)
-                      ? prev.filter(id => id !== opponent.id)
-                      : [...prev, opponent.id]
-                  )}
-                  className={selectedOpponents.includes(opponent.id)
-                    ? "bg-[#1E3A8A] hover:bg-[#2B4C9F] text-[#F3F4F6]"
-                    : "bg-[#1E3A8A]/10 border-[#1E3A8A]/30 hover:bg-[#1E3A8A]/20 text-[#60A5FA]"
-                  }
-                >
-                  {opponent.name}
-                </Button>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <label className="text-sm text-gray-400">Visibility</label>
-            <div className="flex space-x-2 mt-2">
-              <Button
-                type="button"
-                variant={isPublic ? 'default' : 'outline'}
-                onClick={() => setIsPublic(true)}
-                className={isPublic
-                  ? "bg-[#1E3A8A] hover:bg-[#2B4C9F] text-[#F3F4F6]"
-                  : "bg-[#1E3A8A]/10 border-[#1E3A8A]/30 hover:bg-[#1E3A8A]/20 text-[#60A5FA]"
-                }
-              >
-                Public
-              </Button>
-              <Button
-                type="button"
-                variant={!isPublic ? 'default' : 'outline'}
-                onClick={() => setIsPublic(false)}
-                className={!isPublic
-                  ? "bg-[#1E3A8A] hover:bg-[#2B4C9F] text-[#F3F4F6]"
-                  : "bg-[#1E3A8A]/10 border-[#1E3A8A]/30 hover:bg-[#1E3A8A]/20 text-[#60A5FA]"
-                }
-              >
-                Private
-              </Button>
-            </div>
-          </div>
-
-          <div>
-            <label className="text-sm text-gray-400">Description</label>
-            <textarea
+            <Label className="text-white/70">Description</Label>
+            <Textarea
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="w-full mt-2 p-2 rounded bg-[#1E3A8A]/10 border border-[#1E3A8A]/30 text-white"
-              rows={4}
+              onChange={(e: ChangeEvent<HTMLTextAreaElement>) =>
+                setDescription(e.target.value)
+              }
               placeholder="Describe your proposal..."
-              required
+              className="bg-black/20 border-white/10 text-white placeholder:text-white/50"
             />
           </div>
 
-          <div className="flex justify-end space-x-2">
-            <Button
-              type="button"
-              variant="outline"
+          <div>
+            <Label className="text-white/70">Recipients</Label>
+            <div className="space-y-2 mt-2">
+              {opponents.map((opponent) => (
+                <div key={opponent.id} className="flex items-center space-x-2">
+                  <Switch
+                    checked={selectedOpponents.includes(opponent.id)}
+                    onCheckedChange={(checked: boolean) => {
+                      setSelectedOpponents((prev) =>
+                        checked
+                          ? [...prev, opponent.id]
+                          : prev.filter((id) => id !== opponent.id)
+                      );
+                    }}
+                    className="data-[state=checked]:bg-[hsl(280,100%,70%)]"
+                  />
+                  <span className="text-white">{opponent.name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            <Switch
+              checked={isPublic}
+              onCheckedChange={(checked: boolean) => setIsPublic(checked)}
+              className="data-[state=checked]:bg-[hsl(280,100%,70%)]"
+            />
+            <Label className="text-white">Make Public</Label>
+          </div>
+
+          <div className="flex justify-end space-x-2 pt-2">
+            <Button 
+              variant="outline" 
               onClick={onClose}
-              className="bg-[#1E3A8A]/10 border-[#1E3A8A]/30 hover:bg-[#1E3A8A]/20 text-[#60A5FA]"
+              className="bg-white/5 border-white/10 hover:bg-white/10 text-white hover:text-white"
             >
               Cancel
             </Button>
-            <Button
-              type="submit"
-              disabled={!description || selectedOpponents.length === 0}
-              className="bg-[#1E3A8A] hover:bg-[#2B4C9F] text-[#F3F4F6]"
+            <Button 
+              onClick={() => void handleSubmit()}
+              className="bg-[hsl(280,100%,70%)] hover:bg-[hsl(280,100%,65%)] text-white"
             >
-              Submit Proposal
+              Submit
             </Button>
           </div>
-        </form>
+        </div>
       </DialogContent>
     </Dialog>
   );

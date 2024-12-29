@@ -1,7 +1,8 @@
 import "~/styles/globals.css";
 
 import { Inter } from "next/font/google";
-import { Header } from "./_components/header";
+import { TRPCReactProvider } from "~/trpc/react";
+import { SessionProvider } from "next-auth/react";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -9,8 +10,8 @@ const inter = Inter({
 });
 
 export const metadata = {
-  title: "Galactic Diplomacy",
-  description: "Navigate interstellar politics, forge alliances, and shape the destiny of civilizations",
+  title: "AI Wargame",
+  description: "A futuristic military strategy game with AI opponents",
   icons: [{ rel: "icon", url: "/favicon.ico" }],
 };
 
@@ -21,18 +22,12 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={`font-sans ${inter.variable} min-h-screen bg-[#030712] relative`}>
-        {/* Fixed Background Elements */}
-        <div className="fixed inset-0 bg-gradient-to-b from-[#0A0F1C] to-transparent pointer-events-none" />
-        <div className="fixed inset-0 bg-[url('/grid.svg')] opacity-10 pointer-events-none" />
-        
-        {/* Content */}
-        <div className="relative">
-          <Header />
-          <main className="pt-16">
+      <body className={`font-sans ${inter.variable}`}>
+        <TRPCReactProvider>
+          <SessionProvider>
             {children}
-          </main>
-        </div>
+          </SessionProvider>
+        </TRPCReactProvider>
       </body>
     </html>
   );

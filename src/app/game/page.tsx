@@ -1,51 +1,51 @@
-import { auth } from "~/server/auth";
-import { redirect } from "next/navigation";
-import { type GameState } from "~/types/game";
-import { GameContainer } from "./_components/game-container";
+"use client";
 
-export default async function GamePage() {
-  // Server-side auth check
-  const session = await auth();
-  if (!session?.user) {
-    redirect("/login");
-  }
+import { api } from "~/trpc/react";
+import { Button } from "@/components/ui/button";
+import { AuthWrapper } from "./_components/auth-wrapper";
+import { useRouter } from "next/navigation";
 
-  // This will be replaced with real game state from the database
-  const initialGameState: GameState = {
-    id: 1,
-    currentRound: 1,
-    phase: 'PROPOSAL',
-    remainingProposals: 2,
-    playerObjectives: {
-      public: {
-        id: 1,
-        description: "Establish a trade agreement with the Centauri Republic",
-        isPublic: true,
-        type: 'TRADE_DEAL',
-        status: 'PENDING',
-        targetOpponentId: 1
-      },
-      private: {
-        id: 2,
-        description: "Secretly undermine any military alliances proposed by the Sirius Confederation",
-        isPublic: false,
-        type: 'SABOTAGE',
-        status: 'PENDING',
-        targetOpponentId: 2
-      }
+export default function GamePage() {
+  const router = useRouter();
+
+  // Create game mutation
+  const createGameMutation = api.game.create.useMutation({
+    onSuccess: (game) => {
+      router.push(`/game/${game.id}`);
     },
-    opponents: [
-      { id: 1, name: "Centauri Republic", avatar: "/avatars/centauri.jpg", status: "Active", might: 85, economy: 92 },
-      { id: 2, name: "Sirius Confederation", avatar: "/avatars/sirius.jpg", status: "Active", might: 78, economy: 88 },
-      { id: 3, name: "Proxima Alliance", avatar: "/avatars/proxima.jpg", status: "Active", might: 95, economy: 75 },
-      { id: 4, name: "Vega Dominion", avatar: "/avatars/vega.jpg", status: "Active", might: 89, economy: 83 },
-    ],
-    proposals: [],
-    log: [
-      { time: "08:45:23", event: "Game started - Round 1 begins" },
-      { time: "08:45:24", event: "Proposal phase - Each player may make up to 2 proposals" }
-    ]
+  });
+
+  const handleCreateGame = async () => {
+    try {
+      await createGameMutation.mutateAsync({
+        civilization: "Earth Alliance", // TODO: Let user choose civilization
+      });
+    } catch (error) {
+      if (error instanceof Error) {
+        console.error("Failed to create game:", error.message);
+      }
+    }
   };
 
-  return <GameContainer initialGameState={initialGameState} />;
+  return (
+    <AuthWrapper>
+      <main className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-b from-[#2e026d] to-[#15162c] text-white">
+        <div className="container flex flex-col items-center justify-center gap-12 px-4 py-16">
+          <h1 className="text-5xl font-extrabold tracking-tight sm:text-[5rem]">
+            AI <span className="text-[hsl(280,100%,70%)]">Wargame</span>
+          </h1>
+          <div className="flex flex-col items-center gap-4">
+            <p className="text-lg text-white/80">Start a new game to begin your conquest</p>
+            <Button 
+              onClick={() => void handleCreateGame()}
+              disabled={createGameMutation.status === "pending"}
+              className="text-lg"
+            >
+              {createGameMutation.status === "pending" ? "Creating..." : "Start New Game"}
+            </Button>
+          </div>
+        </div>
+      </main>
+    </AuthWrapper>
+  );
 } 

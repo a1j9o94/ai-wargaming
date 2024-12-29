@@ -1,67 +1,84 @@
-export interface Opponent {
-  id: number;
+export const GamePhase = {
+  SETUP: "SETUP",
+  PROPOSAL: "PROPOSAL",
+  DISCUSSION: "DISCUSSION",
+  VOTING: "VOTING",
+  RESOLVE: "RESOLVE",
+  COMPLETED: "COMPLETED",
+} as const;
+
+export type GamePhase = typeof GamePhase[keyof typeof GamePhase];
+
+export interface Participant {
+  id: string;
   name: string;
-  avatar: string;
-  status: string;
+  civilization: string;
   might: number;
   economy: number;
+  isAI: boolean;
+  userId: string | null;
+  remainingProposals: number;
 }
 
 export interface LogEntry {
   time: string;
   event: string;
+  isPublic?: boolean;
+}
+
+export interface Proposal {
+  id: string;
+  creatorId: string;
+  roundNumber: number;
+  description: string;
+  type: "TRADE" | "MILITARY" | "ALLIANCE";
+  isPublic: boolean;
+  recipients: string[];
+  status: "PENDING" | "ACCEPTED" | "REJECTED";
+  votes: Array<{
+    opponentId: string;
+    support: boolean;
+  }>;
 }
 
 export interface ChatMessage {
-  id: number;
-  senderId: number;
+  id: string;
+  senderId: string;
   content: string;
   timestamp: string;
 }
 
 export interface Discussion {
-  id: number;
-  participants: number[]; // Array of participant IDs (including the player)
+  id: string;
+  participants: string[];
   messages: ChatMessage[];
 }
 
-export interface Objective {
-  id: number;
-  description: string;
-  isPublic: boolean;
-  targetMight?: number;
-  targetEconomy?: number;
-  targetOpponentId?: number;
-  type: 'TRADE_DEAL' | 'MILITARY_ALLIANCE' | 'SABOTAGE' | 'ECONOMIC_GROWTH' | 'MILITARY_GROWTH';
-  status: 'PENDING' | 'COMPLETED' | 'FAILED';
-}
-
-export interface Proposal {
-  id: number;
-  createdById: number;
-  roundNumber: number;
-  description: string;
-  type: 'TRADE' | 'MILITARY' | 'ALLIANCE';
-  isPublic: boolean;
-  recipients: number[]; // Array of opponent IDs
-  status: 'PENDING' | 'ACCEPTED' | 'REJECTED';
-  votes: {
-    opponentId: number;
-    support: boolean;
-  }[];
-}
-
 export interface GameState {
-  id: number;
+  id: string;
   currentRound: number;
-  phase: 'SETUP' | 'PROPOSAL' | 'DISCUSSION' | 'VOTING' | 'RESOLVE' | 'COMPLETED';
+  phase: GamePhase;
   playerObjectives: {
-    public: Objective;
-    private: Objective;
+    public: string;
+    private: string;
   };
   proposals: Proposal[];
-  opponents: Opponent[];
+  opponents: Participant[];
+  discussions: Discussion[];
   log: LogEntry[];
   remainingProposals: number;
-  discussions: Discussion[]; // Track all discussions in the game
-} 
+}
+
+export type MakeProposalFunction = (data: {
+  description: string;
+  type: "TRADE" | "MILITARY" | "ALLIANCE";
+  isPublic: boolean;
+  recipients: string[];
+}) => Promise<void>;
+
+export type OnSubmitProposalFunction = (data: {
+  description: string;
+  type: "TRADE" | "MILITARY" | "ALLIANCE";
+  isPublic: boolean;
+  recipients: string[];
+}) => Promise<void>;

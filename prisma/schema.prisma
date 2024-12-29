@@ -14,18 +14,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Post {
-  id        Int      @id @default(autoincrement())
-  name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  createdBy   User   @relation(fields: [createdById], references: [id])
-  createdById String
-
-  @@index([name])
-}
-
 // Necessary for Next auth
 model Account {
   id                       String  @id @default(cuid())
@@ -62,7 +50,6 @@ model User {
   image           String?
   accounts        Account[]
   sessions        Session[]
-  posts           Post[]
   games           Game[] // Games this user has participated in
   messages        ChatMessage[] // Messages sent by this user
   GameParticipant GameParticipant[]
@@ -78,7 +65,7 @@ model VerificationToken {
 
 // Game Models
 model Game {
-  id           Int               @id @default(autoincrement())
+  id           String            @id @default(cuid())
   createdAt    DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
   currentRound Int               @default(1)
@@ -87,91 +74,101 @@ model Game {
   proposals    Proposal[]
   discussions  Discussion[]
   logEntries   LogEntry[]
-  User         User?             @relation(fields: [userId], references: [id])
-  userId       String?
+  host         User?             @relation(fields: [hostId], references: [id])
+  hostId       String?
 }
 
 model GameParticipant {
-  id                 Int        @id @default(autoincrement())
+  id                 String     @id @default(cuid())
   game               Game       @relation(fields: [gameId], references: [id])
-  gameId             Int
-  user               User       @relation(fields: [userId], references: [id])
-  userId             String
+  gameId             String
+  user               User?      @relation(fields: [userId], references: [id])
+  userId             String?
   civilization       String
   might              Int        @default(80)
   economy            Int        @default(80)
   publicObjective    Objective? @relation("PublicObjective")
   privateObjective   Objective? @relation("PrivateObjective")
   remainingProposals Int        @default(2)
+  isAI               Boolean    @default(false)
 
-  // Remove the old proposal relations and add the new one
-  proposalParticipations  ProposalParticipant[]
-  votes                   Vote[]
-  participatedDiscussions Discussion[]          @relation("DiscussionParticipants")
+  // Proposals and votes
+  createdProposals  Proposal[]            @relation("CreatedProposals")
+  receivedProposals ProposalParticipant[]
+  votes             Vote[]
+
+  // Discussions
+  participatedDiscussions Discussion[] @relation("DiscussionParticipants")
+
+  // Log entries visible to this participant
+  visibleLogEntries LogEntry[]    @relation("LogVisibility")
+  ChatMessage       ChatMessage[]
 
   @@unique([gameId, userId])
 }
 
 model Objective {
-  id                  Int     @id @default(autoincrement())
+  id                  String  @id @default(cuid())
   description         String
   isPublic            Boolean
   targetMight         Int?
   targetEconomy       Int?
-  targetParticipantId Int?
+  targetParticipantId String?
   type                String // TRADE_DEAL, MILITARY_ALLIANCE, SABOTAGE, ECONOMIC_GROWTH, MILITARY_GROWTH
   status              String  @default("PENDING") // PENDING, COMPLETED, FAILED
 
   // Relations
   publicFor    GameParticipant? @relation("PublicObjective", fields: [publicForId], references: [id])
-  publicForId  Int?             @unique
+  publicForId  String?          @unique
   privateFor   GameParticipant? @relation("PrivateObjective", fields: [privateForId], references: [id])
-  privateForId Int?             @unique
+  privateForId String?          @unique
 }
 
 model Proposal {
-  id          Int      @id @default(autoincrement())
+  id          String   @id @default(cuid())
   createdAt   DateTime @default(now())
   game        Game     @relation(fields: [gameId], references: [id])
-  gameId      Int
+  gameId      String
   roundNumber Int
   description String
   type        String // TRADE, MILITARY, ALLIANCE
   isPublic    Boolean
   status      String   @default("PENDING") // PENDING, ACCEPTED, REJECTED
 
-  // Replace the old relations with the new one
+  // Relations
+  creator      GameParticipant       @relation("CreatedProposals", fields: [creatorId], references: [id])
+  creatorId    String
   participants ProposalParticipant[]
   votes        Vote[]
 }
 
-// New join table to handle the relationship
+// Join table for proposal participants
 model ProposalParticipant {
   proposal      Proposal        @relation(fields: [proposalId], references: [id])
-  proposalId    Int
+  proposalId    String
   participant   GameParticipant @relation(fields: [participantId], references: [id])
-  participantId Int
+  participantId String
   role          String // "CREATOR" or "RECIPIENT"
 
   @@id([proposalId, participantId])
 }
 
 model Vote {
-  id            Int             @id @default(autoincrement())
+  id            String          @id @default(cuid())
   proposal      Proposal        @relation(fields: [proposalId], references: [id])
-  proposalId    Int
+  proposalId    String
   participant   GameParticipant @relation(fields: [participantId], references: [id])
-  participantId Int
+  participantId String
   support       Boolean
 
   @@unique([proposalId, participantId])
 }
 
 model Discussion {
-  id        Int      @id @default(autoincrement())
+  id        String   @id @default(cuid())
   createdAt DateTime @default(now())
   game      Game     @relation(fields: [gameId], references: [id])
-  gameId    Int
+  gameId    String
 
   // Relations
   participants GameParticipant[] @relation("DiscussionParticipants")
@@ -179,20 +176,26 @@ model Discussion {
 }
 
 model ChatMessage {
-  id           Int        @id @default(autoincrement())
-  createdAt    DateTime   @default(now())
+  id           String          @id @default(cuid())
+  createdAt    DateTime        @default(now())
   content      String
-  discussion   Discussion @relation(fields: [discussionId], references: [id])
-  discussionId Int
-  sender       User       @relation(fields: [senderId], references: [id])
+  discussion   Discussion      @relation(fields: [discussionId], references: [id])
+  discussionId String
+  sender       GameParticipant @relation(fields: [senderId], references: [id])
   senderId     String
+  User         User?           @relation(fields: [userId], references: [id])
+  userId       String?
 }
 
 model LogEntry {
-  id        Int      @id @default(autoincrement())
-  createdAt DateTime @default(now())
-  game      Game     @relation(fields: [gameId], references: [id])
-  gameId    Int
+  id        String            @id @default(cuid())
+  createdAt DateTime          @default(now())
+  game      Game              @relation(fields: [gameId], references: [id])
+  gameId    String
   time      String
   event     String
+  isPublic  Boolean           @default(true) // If false, only visible to visibleTo players
+  visibleTo GameParticipant[] @relation("LogVisibility")
+
+  @@index([gameId])
 }

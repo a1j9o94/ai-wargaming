@@ -1,330 +1,339 @@
 'use client';
 
 import { useState, useEffect } from "react";
-import { OpponentGrid } from "./opponent-grid";
-import { StatusPanel } from "./status-panel";
+import { api } from "~/trpc/react";
+import type { GamePhase, Discussion, ChatMessage, Participant } from "~/types/game";
 import { GameLog } from "./game-log";
-import { GamePhase } from "./game-phase";
-import { ProposalDialog } from "./proposal-dialog";
-import { DiscussionDialog } from "./discussion-dialog";
+import { GamePhase as GamePhaseComponent } from "./game-phase";
+import { OpponentGrid } from "./opponent-grid";
 import { PhaseAnnouncement } from "./phase-announcement";
-import { type GameState, type Discussion } from "~/types/game";
+import { StatusPanel } from "./status-panel";
+import { DiscussionDialog } from "./discussion-dialog";
 
 interface GameContainerProps {
-  initialGameState: GameState;
+  gameId: string;
 }
 
-const resolveOutcomes = (proposals: GameState['proposals']) => {
-  // This is a placeholder for the actual resolution logic
-  // Here we would determine the effects of each proposal based on votes
-  const outcomes = proposals.map(proposal => {
-    const supportCount = proposal.votes.filter(v => v.support).length;
-    const opposedCount = proposal.votes.filter(v => !v.support).length;
-    return {
-      proposalId: proposal.id,
-      accepted: supportCount > opposedCount,
-      type: proposal.type,
-      description: proposal.description
-    };
+interface GameStateParticipant extends Participant {
+  publicObjective: {
+    type: string;
+    status: string;
+    description: string;
+    isPublic: boolean;
+    id: string;
+    targetMight: number | null;
+    targetEconomy: number | null;
+    targetParticipantId: string | null;
+    publicForId: string | null;
+    privateForId: string | null;
+  } | null;
+  privateObjective: {
+    type: string;
+    status: string;
+    description: string;
+    isPublic: boolean;
+    id: string;
+    targetMight: number | null;
+    targetEconomy: number | null;
+    targetParticipantId: string | null;
+    publicForId: string | null;
+    privateForId: string | null;
+  } | null;
+}
+
+interface GameStateDiscussion {
+  id: string;
+  participants: GameStateParticipant[];
+  messages: ChatMessage[];
+}
+
+type ChatResponse = ChatMessage | { type: 'error'; message: string };
+
+export function GameContainer({ gameId }: GameContainerProps) {
+  // State hooks
+  const [showPhaseModal, setShowPhaseModal] = useState(false);
+  const [lastPhase, setLastPhase] = useState<GamePhase | null>(null);
+  const [showDiscussionDialog, setShowDiscussionDialog] = useState(false);
+  const [currentDiscussion, setCurrentDiscussion] = useState<Discussion | null>(null);
+
+  // Query game state
+  const { data: gameState, refetch: refetchGameState } = api.game.getGameState.useQuery(
+    { gameId }
+  );
+
+  // Subscribe to game updates
+  api.game.onGameUpdate.useSubscription(
+    { gameId, lastEventId: null },
+    {
+      onData(update) {
+        console.log("Game update:", update);
+        void refetchGameState();
+      },
+    }
+  );
+
+  // Subscribe to chat messages if in a discussion
+  api.game.onNewMessage.useSubscription(
+    { discussionId: currentDiscussion?.id ?? "0", lastEventId: null },
+    {
+      onData(message: ChatResponse) {
+        if (!currentDiscussion) return;
+        console.log("New message:", message);
+        if ('type' in message) return; // Skip error messages
+        
+        setCurrentDiscussion(prev => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            messages: [...prev.messages, message],
+          };
+        });
+      },
+      enabled: currentDiscussion !== null,
+    }
+  );
+
+  // Mutations
+  const makeProposalMutation = api.game.makeProposal.useMutation({
+    onSuccess: () => void refetchGameState(),
   });
 
-  return outcomes;
-};
-
-export function GameContainer({ initialGameState }: GameContainerProps) {
-  const [gameState, setGameState] = useState<GameState>({
-    ...initialGameState,
-    discussions: [] // Initialize empty discussions array
+  const voteMutation = api.game.vote.useMutation({
+    onSuccess: () => void refetchGameState(),
   });
-  const [isProposalDialogOpen, setIsProposalDialogOpen] = useState(false);
-  const [isDiscussionDialogOpen, setIsDiscussionDialogOpen] = useState(false);
-  const [showPhaseAnnouncement, setShowPhaseAnnouncement] = useState(true);
-  const [currentDiscussionId, setCurrentDiscussionId] = useState<number | null>(null);
-  const [preselectedRecipients, setPreselectedRecipients] = useState<number[]>([]);
 
-  // Track phase changes
+  const updateDiscussionMutation = api.game.updateDiscussionParticipants.useMutation({
+    onSuccess: () => void refetchGameState(),
+  });
+
+  const advancePhaseMutation = api.game.advancePhase.useMutation({
+    onSuccess: () => void refetchGameState(),
+  });
+
+  // Effects
   useEffect(() => {
-    setShowPhaseAnnouncement(true);
-  }, [gameState.phase, gameState.currentRound]);
+    if (gameState?.phase && gameState.phase !== lastPhase) {
+      setShowPhaseModal(true);
+      setLastPhase(gameState.phase as GamePhase);
+    }
+  }, [gameState?.phase, lastPhase]);
 
-  const handleStartDiscussion = () => {
-    setIsDiscussionDialogOpen(true);
+  // Separate effect for discussion participants updates
+  useEffect(() => {
+    if (currentDiscussion && gameState) {
+      const updatedDiscussion = gameState.discussions.find(d => d.id === currentDiscussion.id) as GameStateDiscussion | undefined;
+      if (updatedDiscussion) {
+        const currentParticipantIds = currentDiscussion.participants;
+        const newParticipantIds = updatedDiscussion.participants.map(p => p.id);
+        
+        if (JSON.stringify(currentParticipantIds) !== JSON.stringify(newParticipantIds)) {
+          setCurrentDiscussion(prev => ({
+            ...prev!,
+            participants: updatedDiscussion.participants.map(p => p.id),
+          }));
+        }
+      }
+    }
+  }, [gameState, currentDiscussion]);
+
+  if (!gameState) {
+    return <div className="flex min-h-screen items-center justify-center text-white">
+      <div className="animate-pulse text-lg">Loading game state...</div>
+    </div>;
+  }
+
+  const currentParticipant = gameState.participants.find(
+    (p) => p.userId !== null && !p.isAI
+  );
+
+  if (!currentParticipant) {
+    return <div className="flex min-h-screen items-center justify-center text-white">
+      <div className="rounded-lg bg-red-500/10 p-4 text-red-500">Error: You are not a participant in this game</div>
+    </div>;
+  }
+
+  const handleMakeProposal = async (data: {
+    description: string;
+    type: "TRADE" | "MILITARY" | "ALLIANCE";
+    isPublic: boolean;
+    recipients: string[];
+  }): Promise<void> => {
+    if (!currentParticipant) return;
+    await makeProposalMutation.mutateAsync({
+      gameId,
+      ...data,
+      senderId: currentParticipant.id,
+    });
   };
 
-  const getCurrentDiscussion = () => {
-    return currentDiscussionId 
-      ? gameState.discussions.find(d => d.id === currentDiscussionId)
-      : undefined;
+  const handleVote = async (proposalId: string, support: boolean): Promise<void> => {
+    if (!currentParticipant) return;
+    await voteMutation.mutateAsync({
+      proposalId,
+      support,
+      participantId: currentParticipant.id,
+    });
   };
 
-  const handleUpdateParticipants = (participantIds: number[]) => {
-    // Check if a discussion with these exact participants already exists
-    const existingDiscussion = gameState.discussions.find(d => 
-      d.participants.length === participantIds.length && 
-      d.participants.every(p => participantIds.includes(p))
-    );
+  const handleAdvancePhase = async (): Promise<void> => {
+    await advancePhaseMutation.mutateAsync({
+      gameId,
+    });
+  };
 
-    if (existingDiscussion) {
-      setCurrentDiscussionId(existingDiscussion.id);
-    } else if (participantIds.length > 0) {
-      // Create a new discussion
-      const newDiscussion: Discussion = {
-        id: gameState.discussions.length + 1,
-        participants: participantIds,
-        messages: []
-      };
+  const handleOpenDiscussion = async (participantIds: string[]) => {
+    if (currentDiscussion) {
+      setCurrentDiscussion(null);
+      setShowDiscussionDialog(false);
+    }
 
-      setGameState(prev => ({
-        ...prev,
-        discussions: [...prev.discussions, newDiscussion]
-      }));
-      setCurrentDiscussionId(newDiscussion.id);
+    const sortedParticipantIds = [...participantIds].sort();
+
+    const discussion = gameState?.discussions.find(d => {
+      const discussionParticipantIds = d.participants.map(p => p.id).sort();
+      return (
+        discussionParticipantIds.length === sortedParticipantIds.length &&
+        discussionParticipantIds.every((id, index) => id === sortedParticipantIds[index])
+      );
+    });
+
+    if (discussion) {
+      setCurrentDiscussion({
+        id: discussion.id,
+        participants: discussion.participants.map(p => p.id),
+        messages: discussion.messages.map(m => ({
+          id: m.id,
+          senderId: m.senderId,
+          content: m.content,
+          timestamp: m.createdAt.toISOString(),
+        })),
+      });
+      setShowDiscussionDialog(true);
+    } else {
+      try {
+        const result = await updateDiscussionMutation.mutateAsync({
+          discussionId: "-1",
+          participantIds: sortedParticipantIds,
+          gameId,
+        });
+        
+        setCurrentDiscussion({
+          id: result.id,
+          participants: result.participants.map(p => p.id),
+          messages: [],
+        });
+        setShowDiscussionDialog(true);
+      } catch (error) {
+        console.error('Error creating discussion:', error);
+      }
     }
   };
 
-  const handleSendMessage = (content: string) => {
-    if (!currentDiscussionId) return;
-
-    const message = {
-      id: getCurrentDiscussion()?.messages.length ?? 0,
-      senderId: 0, // Current player
-      content,
-      timestamp: new Date().toLocaleTimeString()
-    };
-
-    setGameState(prev => {
-      const discussion = prev.discussions.find(d => d.id === currentDiscussionId);
-      if (!discussion) return prev;
-
-      const participantNames = discussion.participants
-        .filter(id => id !== 0)
-        .map(id => prev.opponents.find(o => o.id === id)?.name ?? 'Unknown')
-        .join(", ");
-
-      return {
-        ...prev,
-        discussions: prev.discussions.map(d => 
-          d.id === currentDiscussionId
-            ? { ...d, messages: [...d.messages, message] }
-            : d
-        ),
-        log: [
-          {
-            time: message.timestamp,
-            event: `You sent a message in discussion with ${participantNames}`
-          },
-          ...prev.log
-        ]
-      };
-    });
-  };
-
-  const handleMakeProposal = () => {
-    setIsProposalDialogOpen(true);
-  };
-
-  const handleProposalSubmit = (proposal: {
-    description: string;
-    type: 'TRADE' | 'MILITARY' | 'ALLIANCE';
-    isPublic: boolean;
-    recipients: number[];
-  }) => {
-    // Create a new proposal
-    const newProposal = {
-      id: gameState.proposals.length + 1,
-      createdById: 0, // Current player
-      roundNumber: gameState.currentRound,
-      status: 'PENDING' as const,
-      votes: [],
-      ...proposal,
-    };
-
-    // Update game state
-    setGameState(prev => ({
-      ...prev,
-      proposals: [...prev.proposals, newProposal],
-      remainingProposals: prev.remainingProposals - 1,
-      log: [
-        {
-          time: new Date().toLocaleTimeString(),
-          event: `You made a ${proposal.isPublic ? 'public' : 'private'} ${proposal.type.toLowerCase()} proposal`
-        },
-        ...prev.log
-      ]
-    }));
-
-    setIsProposalDialogOpen(false);
-  };
-
-  const checkAllVotesComplete = (proposals: GameState['proposals']) => {
-    // For now, we'll assume each proposal needs one vote from each opponent plus the player
-    const requiredVotesPerProposal = gameState.opponents.length + 1;
-    return proposals.every(p => p.votes.length >= requiredVotesPerProposal);
-  };
-
-  const handleVote = (proposalId: number, support: boolean) => {
-    setGameState(prev => {
-      // Update the proposals with the new vote
-      const updatedProposals = prev.proposals.map(p => 
-        p.id === proposalId
-          ? { ...p, votes: [...p.votes, { opponentId: 0, support }] }
-          : p
-      );
-
-      // Check if player has voted on all proposals
-      const hasVotedOnAll = updatedProposals.every(p => 
-        p.votes.some(vote => vote.opponentId === 0)
-      );
-
-      if (hasVotedOnAll) {
-        // Move to resolve phase
-        return {
-          ...prev,
-          phase: 'RESOLVE',
-          proposals: updatedProposals,
-          log: [
-            {
-              time: new Date().toLocaleTimeString(),
-              event: `You voted to ${support ? 'support' : 'oppose'} proposal #${proposalId}`
-            },
-            {
-              time: new Date().toLocaleTimeString(),
-              event: "All votes submitted - Moving to resolution phase"
-            },
-            ...prev.log
-          ]
-        };
-      }
-
-      // If not all votes are in, just update the proposals and log
-      return {
-        ...prev,
-        proposals: updatedProposals,
-        log: [
-          {
-            time: new Date().toLocaleTimeString(),
-            event: `You voted to ${support ? 'support' : 'oppose'} proposal #${proposalId}`
-          },
-          ...prev.log
-        ]
-      };
-    });
-  };
-
-  const handleResolveRound = () => {
-    setGameState(prev => {
-      // Resolve the outcomes
-      const outcomes = resolveOutcomes(prev.proposals);
-      
-      // Create outcome messages
-      const outcomeMessages = outcomes.map(outcome => ({
-        time: new Date().toLocaleTimeString(),
-        event: `Proposal ${outcome.description} was ${outcome.accepted ? 'accepted' : 'rejected'}`
-      }));
-
-      // Start new round
-      return {
-        ...prev,
-        currentRound: prev.currentRound + 1,
-        phase: 'PROPOSAL',
-        remainingProposals: 2,
-        proposals: [],
-        log: [
-          {
-            time: new Date().toLocaleTimeString(),
-            event: `Round ${prev.currentRound} completed - Starting Round ${prev.currentRound + 1}`
-          },
-          ...outcomeMessages,
-          ...prev.log
-        ]
-      };
-    });
-  };
-
-  const handlePass = () => {
-    setGameState(prev => ({
-      ...prev,
-      phase: 'VOTING' as const,
-      log: [
-        {
-          time: new Date().toLocaleTimeString(),
-          event: "You passed your turn"
-        },
-        ...prev.log
-      ]
-    }));
+  const handleCloseDiscussion = () => {
+    setShowDiscussionDialog(false);
+    setCurrentDiscussion(null);
   };
 
   return (
-    <div className="h-[calc(100vh-4rem)]">
-      <div className="h-full grid grid-cols-4 gap-4 p-4">
-        {/* Game Phase Banner */}
-        <div className="col-span-4">
-          <GamePhase 
-            gameState={gameState}
+    <div className="container mx-auto min-h-screen p-6">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        {/* Left column - Status and Game Phase */}
+        <div className="space-y-6">
+          <StatusPanel
+            currentRound={gameState.currentRound}
+            phase={gameState.phase as GamePhase}
+            remainingProposals={currentParticipant.remainingProposals}
+          />
+          <GamePhaseComponent
+            gameId={gameId}
+            phase={gameState.phase as GamePhase}
+            currentParticipantId={currentParticipant.id}
             onMakeProposal={handleMakeProposal}
-            onStartDiscussion={handleStartDiscussion}
             onVote={handleVote}
-            onPass={handlePass}
-            onResolveRound={handleResolveRound}
+            onAdvancePhase={handleAdvancePhase}
+            onOpenDiscussion={handleOpenDiscussion}
+            opponents={gameState.participants.map(p => ({
+              id: p.id,
+              name: p.civilization,
+              civilization: p.civilization,
+              might: p.might,
+              economy: p.economy,
+              isAI: p.isAI,
+              userId: p.userId,
+              remainingProposals: p.remainingProposals
+            }))}
+            proposals={gameState.proposals.map(p => ({
+              id: p.id,
+              creatorId: p.creator.id,
+              roundNumber: p.roundNumber,
+              description: p.description,
+              type: p.type as "TRADE" | "MILITARY" | "ALLIANCE",
+              isPublic: p.isPublic,
+              recipients: p.participants.map(part => part.participantId),
+              status: p.status as "PENDING" | "ACCEPTED" | "REJECTED",
+              votes: p.votes.map(v => ({
+                opponentId: v.participantId,
+                support: v.support,
+              })),
+            }))}
           />
         </div>
 
-        {/* Left Panel - Opponent Grid and Status */}
-        <div className="col-span-2 flex flex-col space-y-4 h-full">
-          <OpponentGrid 
-            opponents={gameState.opponents}
-            onDiscuss={(opponentId) => {
-              setIsDiscussionDialogOpen(true);
-              handleUpdateParticipants([opponentId]);
-            }}
-            onPropose={(opponentId) => {
-              setIsProposalDialogOpen(true);
-              // We'll pre-select this opponent in the proposal dialog
-              setPreselectedRecipients([opponentId]);
-            }}
-          />
-          <StatusPanel 
-            name="Earth Alliance"
-            title="High Commander"
-            might={80}
-            economy={75}
+        {/* Middle column - Opponents */}
+        <div className="lg:col-span-2">
+          <OpponentGrid
+            opponents={gameState.participants.map(p => ({
+              id: p.id,
+              name: p.civilization,
+              civilization: p.civilization,
+              might: p.might,
+              economy: p.economy,
+              isAI: p.isAI,
+              userId: p.userId,
+              remainingProposals: p.remainingProposals
+            }))}
+            gameId={gameId}
+            currentParticipantId={currentParticipant.id}
+            onMakeProposal={handleMakeProposal}
+            onOpenDiscussion={handleOpenDiscussion}
           />
         </div>
-
-        {/* Right Panel - Game Log */}
-        <GameLog entries={gameState.log} />
       </div>
 
-      <ProposalDialog
-        open={isProposalDialogOpen}
-        onClose={() => {
-          setIsProposalDialogOpen(false);
-          setPreselectedRecipients([]);
-        }}
-        onSubmit={handleProposalSubmit}
-        opponents={gameState.opponents}
-        preselectedRecipients={preselectedRecipients}
-      />
+      {/* Game Log */}
+      <div className="mt-6">
+        <GameLog 
+          gameId={gameId}
+          initialEntries={gameState.logEntries} 
+        />
+      </div>
 
-      <DiscussionDialog
-        open={isDiscussionDialogOpen}
-        onClose={() => {
-          setIsDiscussionDialogOpen(false);
-          setCurrentDiscussionId(null);
-        }}
-        opponents={gameState.opponents}
-        currentDiscussion={getCurrentDiscussion()}
-        onSendMessage={handleSendMessage}
-        onUpdateParticipants={handleUpdateParticipants}
-      />
-
+      {/* Phase Announcement Modal */}
       <PhaseAnnouncement
-        show={showPhaseAnnouncement}
-        onClose={() => setShowPhaseAnnouncement(false)}
+        show={showPhaseModal}
+        onClose={() => setShowPhaseModal(false)}
+        phase={gameState.phase as GamePhase}
         round={gameState.currentRound}
-        phase={gameState.phase}
       />
+
+      {/* Discussion Dialog */}
+      {showDiscussionDialog && currentDiscussion && (
+        <DiscussionDialog
+          open={showDiscussionDialog}
+          onClose={handleCloseDiscussion}
+          opponents={gameState.participants.map(p => ({
+            id: p.id,
+            name: p.civilization,
+            civilization: p.civilization,
+            might: p.might,
+            economy: p.economy,
+            isAI: p.isAI,
+            userId: p.userId,
+            remainingProposals: p.remainingProposals
+          }))}
+          currentParticipantId={currentParticipant.id}
+        />
+      )}
     </div>
   );
-} 
+}

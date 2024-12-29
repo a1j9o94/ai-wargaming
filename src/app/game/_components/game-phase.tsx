@@ -1,133 +1,141 @@
-import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { type GameState, type Proposal } from "~/types/game";
+import type { GamePhase as GamePhaseType, Proposal, MakeProposalFunction, Participant } from "~/types/game";
+import { ProposalDialog } from "./proposal-dialog";
+import { useState } from "react";
+import { api } from "~/trpc/react";
 
 interface GamePhaseProps {
-  gameState: GameState;
-  onMakeProposal: () => void;
-  onStartDiscussion: () => void;
-  onVote: (proposalId: number, support: boolean) => void;
-  onPass: () => void;
-  onResolveRound: () => void;
+  phase: GamePhaseType;
+  proposals: Proposal[];
+  gameId: string;
+  currentParticipantId: string;
+  opponents: Participant[];
+  onMakeProposal: MakeProposalFunction;
+  onVote: (proposalId: string, support: boolean) => Promise<void>;
+  onAdvancePhase: () => Promise<void>;
+  onOpenDiscussion: (participantIds: string[]) => void;
 }
 
-export function GamePhase({ 
-  gameState, 
+export function GamePhase({
+  phase,
+  proposals,
+  gameId,
+  currentParticipantId,
+  opponents,
   onMakeProposal,
-  onStartDiscussion,
-  onVote, 
-  onPass,
-  onResolveRound 
+  onVote,
+  onAdvancePhase,
+  onOpenDiscussion,
 }: GamePhaseProps) {
-  const { currentRound, phase, remainingProposals } = gameState;
+  const [isProposalDialogOpen, setIsProposalDialogOpen] = useState(false);
+  const [pendingMessages, setPendingMessages] = useState<string[]>([]);
 
-  // Helper to check if player has voted on a proposal
-  const hasVotedOn = (proposal: Proposal) => {
-    return proposal.votes.some(vote => vote.opponentId === 0); // 0 represents the player
+  api.game.onGameUpdate.useSubscription(
+    { gameId },
+    {
+      onData(update) {
+        if (update.type === 'CHAT') {
+          setPendingMessages(prev => [...prev, String(update.event)]);
+          // Clear message after 3 seconds
+          setTimeout(() => {
+            setPendingMessages(prev => prev.slice(1));
+          }, 3000);
+        }
+      },
+    }
+  );
+
+  const handleOpenGroupDiscussion = () => {
+    // Open discussion with all opponents
+    onOpenDiscussion([currentParticipantId, ...opponents.map(o => o.id)]);
   };
 
-  // Get pending proposals that the player hasn't voted on yet
-  const pendingProposals = gameState.proposals
-    .filter(p => p.status === 'PENDING' && !hasVotedOn(p));
-
-  return (
-    <Card className="bg-[#0A0F1C]/80 border-[#1E3A8A]/20 p-6">
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h2 className="text-xl font-semibold text-[#60A5FA]">Round {currentRound} of 10</h2>
-          <p className="text-sm text-gray-400">Phase: {phase}</p>
-        </div>
-        <div className="flex items-center space-x-4">
-          {phase === 'PROPOSAL' && (
-            <>
-              <div className="text-sm text-gray-400">
-                Proposals Remaining: <span className="text-[#60A5FA]">{remainingProposals}</span>
-              </div>
-              <Button
-                onClick={onStartDiscussion}
-                variant="outline"
-                className="bg-[#1E3A8A]/10 border-[#1E3A8A]/30 hover:bg-[#1E3A8A]/20 text-[#60A5FA]"
-              >
-                Have Discussion
-              </Button>
-              <Button
-                onClick={onMakeProposal}
-                disabled={remainingProposals === 0}
-                className="bg-[#1E3A8A] hover:bg-[#2B4C9F] text-[#F3F4F6]"
-              >
+  const renderPhaseContent = () => {
+    switch (phase) {
+      case "PROPOSAL":
+        return (
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold">Proposal Phase</h3>
+            <div className="flex space-x-4">
+              <Button variant="outline" onClick={() => setIsProposalDialogOpen(true)}>
                 Make Proposal
               </Button>
-              <Button
-                onClick={onPass}
-                variant="outline"
-                className="bg-[#1E3A8A]/10 border-[#1E3A8A]/30 hover:bg-[#1E3A8A]/20 text-[#60A5FA]"
-              >
+              <Button variant="outline" onClick={() => void onAdvancePhase()}>
                 Pass
               </Button>
-            </>
-          )}
-          {phase === 'VOTING' && (
-            <div className="flex flex-col space-y-4 w-full">
-              {pendingProposals.length > 0 ? (
-                pendingProposals.map(proposal => (
-                  <div key={proposal.id} className="flex items-center justify-between bg-[#1E3A8A]/10 p-4 rounded-lg">
-                    <div className="flex-1">
-                      <div className="text-[#60A5FA] font-semibold mb-1">
-                        Proposal #{proposal.id}
-                      </div>
-                      <div className="text-sm text-gray-400">{proposal.description}</div>
-                    </div>
-                    <div className="flex space-x-2 ml-4">
-                      <Button
-                        onClick={() => onVote(proposal.id, true)}
-                        className="bg-green-600 hover:bg-green-700 text-white"
-                      >
-                        Support
-                      </Button>
-                      <Button
-                        onClick={() => onVote(proposal.id, false)}
-                        className="bg-red-600 hover:bg-red-700 text-white"
-                      >
-                        Oppose
-                      </Button>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="text-center text-gray-400">
-                  All votes submitted - Moving to resolution phase...
-                </div>
-              )}
-            </div>
-          )}
-          {phase === 'RESOLVE' && (
-            <div className="flex flex-col items-center space-y-4 w-full">
-              <div className="text-center">
-                <h3 className="text-xl font-semibold text-[#60A5FA] mb-2">Round Resolution</h3>
-                <p className="text-gray-400 mb-4">Review the outcomes and advance to the next round</p>
-              </div>
-              <Button
-                onClick={onResolveRound}
-                className="bg-[#1E3A8A] hover:bg-[#2B4C9F] text-[#F3F4F6] px-8"
-              >
-                Resolve Round
+              <Button variant="outline" onClick={handleOpenGroupDiscussion}>
+                Discuss
               </Button>
             </div>
-          )}
-        </div>
-      </div>
+          </div>
+        );
 
-      {/* Display current objectives */}
-      <div className="grid grid-cols-2 gap-6 mt-4">
-        <div>
-          <h3 className="text-sm font-semibold text-gray-400 mb-2">Public Objective</h3>
-          <p className="text-[#60A5FA]">{gameState.playerObjectives.public.description}</p>
+      case "VOTING":
+        return (
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold">Voting Phase</h3>
+            <div className="space-y-4">
+              {proposals.map((proposal) => (
+                <div
+                  key={proposal.id}
+                  className="rounded-lg border bg-card p-4 space-y-2"
+                >
+                  <p>{proposal.description}</p>
+                  <div className="flex space-x-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => void onVote(proposal.id, true)}
+                    >
+                      Support
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => void onVote(proposal.id, false)}
+                    >
+                      Oppose
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+
+      case "RESOLVE":
+        return (
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold">Resolve Phase</h3>
+            <Button onClick={() => void onAdvancePhase()}>Resolve Round</Button>
+          </div>
+        );
+
+      default:
+        return (
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold">{phase} Phase</h3>
+            <p>Waiting for other players...</p>
+          </div>
+        );
+    }
+  };
+
+  return (
+    <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6">
+      {/* Show pending messages */}
+      {pendingMessages.map((msg, i) => (
+        <div key={i} className="text-sm text-muted-foreground animate-in fade-in slide-in-from-bottom-2">
+          {msg}
         </div>
-        <div>
-          <h3 className="text-sm font-semibold text-gray-400 mb-2">Private Objective</h3>
-          <p className="text-[#60A5FA]">{gameState.playerObjectives.private.description}</p>
-        </div>
-      </div>
-    </Card>
+      ))}
+      {renderPhaseContent()}
+      <ProposalDialog
+        open={isProposalDialogOpen}
+        onClose={() => setIsProposalDialogOpen(false)}
+        onSubmit={async (data) => {
+          await onMakeProposal(data);
+          setIsProposalDialogOpen(false);
+        }}
+      />
+    </div>
   );
 } 
