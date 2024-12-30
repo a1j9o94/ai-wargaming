@@ -71,4 +71,35 @@ export const userRouter = createTRPCRouter({
         },
       });
     }),
+
+  // Get completed games for current user
+  getCompletedGames: protectedProcedure
+    .query(async ({ ctx }) => {
+      return ctx.db.game.findMany({
+        where: {
+          participants: {
+            some: {
+              userId: ctx.session.user.id,
+            },
+          },
+          phase: "COMPLETED",
+        },
+        include: {
+          participants: {
+            include: {
+              user: true,
+            },
+          },
+          _count: {
+            select: {
+              proposals: true,
+              discussions: true,
+            },
+          },
+        },
+        orderBy: {
+          updatedAt: 'desc',
+        },
+      });
+    }),
 });
