@@ -40,7 +40,7 @@ export async function updateGameLog(
       event: message,
       time: new Date().toISOString(),
       isPublic,
-      visibleTo: visibleToIds.length > 0 ? {
+      visibleTo: !isPublic && visibleToIds.length > 0 ? {
         connect: visibleToIds.map(id => ({ id }))
       } : undefined,
     },
@@ -99,6 +99,7 @@ export async function createProposal(
     },
   });
 
+  // Create log entry - public proposals are visible to everyone, private ones only to participants
   await updateGameLog(
     db,
     input.gameId,
@@ -133,7 +134,16 @@ export async function createVote(
     include: {
       game: true,
       creator: true,
-      participants: true,
+      participants: {
+        select: {
+          participant: {
+            select: {
+              id: true,
+              civilization: true,
+            },
+          },
+        },
+      },
       votes: true,
     },
   });
@@ -148,12 +158,16 @@ export async function createVote(
     },
   });
 
+  // Create log entry - public votes are visible to everyone, private ones only to proposal participants
   await updateGameLog(
     db,
     proposal.gameId,
     `${participant.civilization} voted ${input.support ? 'in favor of' : 'against'} the proposal`,
     proposal.isPublic,
-    proposal.isPublic ? [] : [participant.id, proposal.creatorId]
+    proposal.isPublic ? [] : [
+      proposal.creatorId,
+      ...proposal.participants.map(p => p.participant.id)
+    ]
   );
 
   return vote;
