@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from "react";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { Participant, ChatMessage } from "~/types/game";
@@ -23,10 +23,15 @@ export function DiscussionDialog({
   currentParticipantId
 }: DiscussionDialogProps) {
   const [message, setMessage] = useState("");
-  const [selectedParticipants, setSelectedParticipants] = useState<string[]>([currentParticipantId]);
+  const [selectedParticipants, setSelectedParticipants] = useState<string[]>(opponents.map(o => o.id));
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const sendMessage = api.game.sendMessage.useMutation();
+
+  // Update selectedParticipants when opponents change
+  useEffect(() => {
+    setSelectedParticipants(opponents.map(o => o.id));
+  }, [opponents]);
 
   // Get game ID from URL safely
   const gameId = typeof window !== 'undefined' ? 
@@ -36,10 +41,10 @@ export function DiscussionDialog({
   const { data: discussion } = api.game.getDiscussion.useQuery(
     { 
       gameId,
-      participantIds: selectedParticipants 
+      participantIds: [currentParticipantId, ...selectedParticipants]
     },
     { 
-      enabled: selectedParticipants.length > 1 && gameId !== '',
+      enabled: selectedParticipants.length >= 1 && gameId !== '',
     }
   );
 
@@ -84,6 +89,7 @@ export function DiscussionDialog({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (message.trim() && discussion?.id) {
+      console.log("Sending message:", message);
       await sendMessage.mutateAsync({
         discussionId: discussion.id,
         content: message,
@@ -107,6 +113,9 @@ export function DiscussionDialog({
         <DialogTitle className="text-xl font-semibold text-[#60A5FA] mb-2">
           Diplomatic Discussion
         </DialogTitle>
+        <DialogDescription className="text-gray-400 mb-4">
+          Engage in diplomatic discussions with other players to form alliances and negotiate strategies.
+        </DialogDescription>
         <div className="flex justify-between items-start mb-4">
           <div>
             <div className="flex flex-wrap gap-2">
@@ -167,8 +176,7 @@ export function DiscussionDialog({
           />
           <Button 
             type="submit"
-            disabled={!message.trim() || selectedParticipants.length < 2}
-            className="bg-[#1E3A8A] hover:bg-[#2B4C9F] text-[#F3F4F6]"
+            className="bg-[#1E3A8A] hover:bg-[#2B4C9F] text-[rgb(243,244,246)]"
           >
             Send
           </Button>

@@ -288,8 +288,8 @@ export const gameRouter = createTRPCRouter({
 
       const sender = await ctx.db.gameParticipant.findFirst({
         where: {
-          gameId: discussion.gameId,
           id: input.senderId,
+          gameId: discussion.gameId,
         },
       });
 
@@ -299,10 +299,8 @@ export const gameRouter = createTRPCRouter({
         data: {
           content: input.content,
           discussion: { connect: { id: input.discussionId } },
-          sender: { connect: { id: sender.userId ?? ctx.session.user.id } },
-        },
-        include: {
-          sender: true,
+          sender: { connect: { id: sender.id } },
+          User: sender.userId ? { connect: { id: sender.userId } } : undefined,
         },
       });
 
