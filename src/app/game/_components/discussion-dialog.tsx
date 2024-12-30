@@ -38,13 +38,14 @@ export function DiscussionDialog({
     window.location.pathname.split('/')[2] ?? '' : '';
 
   // Get or create discussion when participants change
-  const { data: discussion } = api.game.getDiscussion.useQuery(
+  const { data: discussion, isLoading, refetch } = api.game.getDiscussion.useQuery(
     { 
       gameId,
       participantIds: [currentParticipantId, ...selectedParticipants]
     },
     { 
       enabled: selectedParticipants.length >= 1 && gameId !== '',
+      refetchOnWindowFocus: false,
     }
   );
 
@@ -53,13 +54,13 @@ export function DiscussionDialog({
     if (discussion?.messages) {
       const newMessages: ChatMessage[] = discussion.messages.map(m => ({
         id: m.id,
-        senderId: String(currentParticipantId),
+        senderId: m.senderId,
         content: m.content,
         timestamp: m.createdAt.toISOString()
       }));
       setMessages(newMessages);
     }
-  }, [discussion, currentParticipantId]);
+  }, [discussion]);
 
   // Subscribe to new messages
   api.game.onNewMessage.useSubscription(
@@ -105,6 +106,8 @@ export function DiscussionDialog({
         ? prev.filter(id => id !== opponentId)
         : [...prev, opponentId]
     );
+    // Force a re-fetch for immediate data
+    setTimeout(() => void refetch(), 0);
   };
 
   return (
@@ -145,9 +148,14 @@ export function DiscussionDialog({
         </div>
 
         {/* Messages Area */}
-        <div className="flex-1 overflow-y-auto mb-4 space-y-4 bg-[#1E3A8A]/5 p-4 rounded-lg">
-          {messages.map((msg) => {
-            const sender = msg.senderId === String(currentParticipantId)
+        <div 
+          key={discussion?.id ?? 'no-discussion'}
+          className="flex-1 overflow-y-auto mb-4 space-y-4 bg-[#1E3A8A]/5 p-4 rounded-lg"
+        >
+          {isLoading ? (
+            <div className="text-center text-gray-400">Loading messages...</div>
+          ) : messages.map((msg) => {
+            const sender = msg.senderId === currentParticipantId
               ? { name: "You" }
               : opponents.find(o => o.id === msg.senderId);
 
