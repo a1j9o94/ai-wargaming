@@ -4,13 +4,13 @@ import { useState, useEffect } from "react";
 import { api } from "~/trpc/react";
 import type { GamePhase, Discussion, ChatMessage, Participant } from "~/types/game";
 import { GameLog } from "./game-log";
-import { GamePhase as GamePhaseComponent } from "./game-phase";
 import { OpponentGrid } from "./opponent-grid";
 import { PhaseAnnouncement } from "./phase-announcement";
 import { StatusPanel } from "./status-panel";
 import { DiscussionDialog } from "./discussion-dialog";
 import { ProposalDialog } from "./proposal-dialog";
 import { GameCompletionModal } from "./game-completion-modal";
+import { PlayerArea } from "./player-area";
 
 interface GameContainerProps {
   gameId: string;
@@ -180,14 +180,20 @@ export function GameContainer({ gameId }: GameContainerProps) {
     description: string;
     type: "TRADE" | "MILITARY" | "ALLIANCE";
     isPublic: boolean;
-    recipients: string[];
+    participants: string[];
+    targets: string[];
   }): Promise<void> => {
     if (!currentParticipant) return;
     await makeProposalMutation.mutateAsync({
       gameId,
-      ...data,
+      description: data.description,
+      type: data.type,
+      isPublic: data.isPublic,
       senderId: currentParticipant.id,
+      participants: data.participants,
+      targets: data.targets,
     });
+    handleCloseProposal();
   };
 
   const handleVote = async (proposalId: string, support: boolean): Promise<void> => {
@@ -285,12 +291,12 @@ export function GameContainer({ gameId }: GameContainerProps) {
           <StatusPanel
             currentRound={gameState.currentRound}
             phase={gameState.phase as GamePhase}
-            remainingProposals={currentParticipant.remainingProposals}
           />
-          <GamePhaseComponent
+          <PlayerArea
             gameId={gameId}
             phase={gameState.phase as GamePhase}
             currentParticipantId={currentParticipant.id}
+            remainingProposals={currentParticipant.remainingProposals}
             onVote={handleVote}
             onAdvancePhase={handleAdvancePhase}
             onOpenDiscussion={handleOpenDiscussion}
@@ -394,7 +400,7 @@ export function GameContainer({ gameId }: GameContainerProps) {
           remainingProposals: p.remainingProposals
         }))}
         currentParticipantId={currentParticipant.id}
-        initialRecipients={proposalRecipients}
+        initialParticipants={proposalRecipients}
         remainingProposals={currentParticipant.remainingProposals}
       />
 

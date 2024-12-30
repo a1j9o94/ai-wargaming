@@ -4,6 +4,7 @@ import { orchestratorRouter } from "./routers/orchestrator";
 import { proposalRouter } from "./routers/proposal";
 import { aiPlayerRouter } from "./routers/ai-player";
 import { userRouter } from "./routers/user";
+import { gameRouter } from "./routers/game";
 
 /**
  * This is the primary router for your server.
@@ -11,12 +12,7 @@ import { userRouter } from "./routers/user";
  * All routers added in /api/routers should be manually added here.
  */
 export const appRouter = createTRPCRouter({
-  game: createTRPCRouter({
-    orchestrator: orchestratorRouter,
-    proposal: proposalRouter,
-    discussion: discussionRouter,
-    ai: aiPlayerRouter,
-  }),
+  game: gameRouter,
   user: userRouter,
 });
 

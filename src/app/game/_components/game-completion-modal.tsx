@@ -54,7 +54,7 @@ export function GameCompletionModal({
               variant="outline"
               onClick={() => {
                 handleClose();
-                router.push("/game/active_games");
+                router.push("/game/my-games");
               }}
               className="bg-[#1E3A8A] hover:bg-[#2B4C9F] text-[#F3F4F6]"
             >

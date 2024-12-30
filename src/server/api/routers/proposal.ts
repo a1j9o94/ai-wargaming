@@ -4,10 +4,36 @@ import {
   protectedProcedure,
 } from "~/server/api/trpc";
 import type { PrismaClient } from "@prisma/client";
-import { EventEmitter } from "events";
+import { ProposalRole } from "~/types/game-constants";
+import { ee } from "./orchestrator";
 
-// Create event emitter for proposal events
-export const ee = new EventEmitter();
+// Keep track of last emitted events to prevent duplicates
+const lastEmittedEvents = new Map<string, { id: string; timestamp: number }>();
+
+// Helper function to emit events with deduplication
+function emitGameEvent(gameId: string, event: unknown) {
+  console.log(`[DEBUG] Proposal router emitting event for game ${gameId}:`, {
+    eventType: event && typeof event === 'object' && 'type' in event ? (event as { type: string }).type : 'unknown',
+    eventId: event && typeof event === 'object' && 'id' in event ? (event as { id: string }).id : undefined
+  });
+
+  if (!event || typeof event !== 'object') return;
+
+  const eventId = 'id' in event ? (event as { id: string }).id : undefined;
+  const now = Date.now();
+  
+  // If this is a log entry with an ID, check for duplicates
+  if (eventId) {
+    const lastEvent = lastEmittedEvents.get(gameId);
+    if (lastEvent?.id === eventId && (now - lastEvent.timestamp) < 500) {
+      console.log(`[DEBUG] Proposal router skipping duplicate event ${eventId}`);
+      return;
+    }
+    lastEmittedEvents.set(gameId, { id: eventId, timestamp: now });
+  }
+
+  ee.emit(`game:${gameId}`, event);
+}
 
 // Input type for making a proposal
 const proposalInput = z.object({
@@ -16,7 +42,8 @@ const proposalInput = z.object({
   type: z.enum(["TRADE", "MILITARY", "ALLIANCE"]),
   isPublic: z.boolean(),
   senderId: z.string(),
-  recipients: z.array(z.string()),
+  participants: z.array(z.string()),
+  targets: z.array(z.string()),
 });
 
 // Input type for voting
@@ -45,7 +72,8 @@ export async function updateGameLog(
       } : undefined,
     },
   });
-  ee.emit(`game:${gameId}`, entry);
+  
+  emitGameEvent(gameId, entry);
   return entry;
 }
 
@@ -54,6 +82,20 @@ export async function createProposal(
   db: PrismaClient,
   input: z.infer<typeof proposalInput>
 ) {
+  console.log(`[DEBUG] Creating proposal for game ${input.gameId}:`, {
+    type: input.type,
+    senderId: input.senderId,
+    participantCount: input.participants.length,
+    targetCount: input.targets.length
+  });
+
+  // Validate that a participant is not also a target
+  const overlap = input.participants.filter(p => input.targets.includes(p));
+  if (overlap.length > 0) {
+    console.log(`[DEBUG] Proposal creation failed - participant/target overlap:`, overlap);
+    throw new Error("A participant cannot also be a target");
+  }
+
   const sender = await db.gameParticipant.findFirst({
     where: {
       gameId: input.gameId,
@@ -91,22 +133,47 @@ export async function createProposal(
       isPublic: input.isPublic,
       roundNumber: game.currentRound,
       participants: {
-        create: input.recipients.map(recipientId => ({
-          participant: { connect: { id: recipientId } },
-          role: "RECIPIENT",
-        })),
+        create: [
+          // Add creator as a participant
+          {
+            participant: { connect: { id: sender.id } },
+            role: ProposalRole.CREATOR,
+          },
+          // Add other participants
+          ...input.participants.map(participantId => ({
+            participant: { connect: { id: participantId } },
+            role: ProposalRole.PARTICIPANT,
+          })),
+        ],
       },
     },
   });
 
-  // Create log entry - public proposals are visible to everyone, private ones only to participants
+  // Create targets separately after proposal exists
+  if (input.targets.length > 0) {
+    await db.proposalParticipant.createMany({
+      data: input.targets.map(targetId => ({
+        proposalId: proposal.id,
+        participantId: targetId,
+        role: ProposalRole.TARGET,
+      })),
+    });
+  }
+
+  // Create log entry - public proposals are visible to everyone, private ones only to participants (not targets)
   await updateGameLog(
     db,
     input.gameId,
     `${sender.civilization} made a ${input.isPublic ? 'public' : 'private'} ${input.type} proposal`,
     input.isPublic,
-    input.isPublic ? [] : [sender.id, ...input.recipients]
+    input.isPublic ? [] : [sender.id, ...input.participants]
   );
+
+  console.log(`[DEBUG] Proposal created successfully:`, {
+    proposalId: proposal.id,
+    gameId: input.gameId,
+    type: input.type
+  });
 
   return proposal;
 }
@@ -116,6 +183,12 @@ export async function createVote(
   db: PrismaClient,
   input: z.infer<typeof voteInput>
 ) {
+  console.log(`[DEBUG] Creating vote:`, {
+    proposalId: input.proposalId,
+    participantId: input.participantId,
+    support: input.support
+  });
+
   const participant = await db.gameParticipant.findFirst({
     where: {
       game: {
@@ -169,6 +242,12 @@ export async function createVote(
       ...proposal.participants.map(p => p.participant.id)
     ]
   );
+
+  console.log(`[DEBUG] Vote created successfully:`, {
+    voteId: vote.id,
+    proposalId: input.proposalId,
+    support: input.support
+  });
 
   return vote;
 }

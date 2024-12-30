@@ -5,13 +5,69 @@ import {
 } from "~/server/api/trpc";
 import { GamePhase } from "~/types/game";
 import { PROPOSALS_PER_ROUND } from "~/types/game-constants";
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient, GameParticipant } from "@prisma/client";
 import { EventEmitter, on } from "events";
 import { tracked } from "@trpc/server";
 import { handleAIPhaseActions } from "./ai-player";
+import { PUBLIC_OBJECTIVES, PRIVATE_OBJECTIVES } from "~/types/objective-constants";
 
 // Create event emitter for game events
-const ee = new EventEmitter();
+export const ee = new EventEmitter();
+ee.setMaxListeners(20); // Increase max listeners to prevent warnings
+
+// Debug logging for event emitter
+ee.on('newListener', (event) => {
+  console.log(`[DEBUG] New listener added for event: ${event}`);
+});
+
+ee.on('removeListener', (event) => {
+  console.log(`[DEBUG] Listener removed for event: ${event}`);
+});
+
+// Keep track of last emitted events per game to prevent duplicates
+const lastEmittedEvents = new Map<string, { id: string; timestamp: number }>();
+
+// Helper function to emit game events with deduplication
+function emitGameEvent(gameId: string, event: unknown) {
+  if (!event || typeof event !== 'object') return;
+
+  const eventId = 'id' in event ? (event as { id: string }).id : undefined;
+  const now = Date.now();
+  
+  console.log(`[DEBUG] Attempting to emit event for game ${gameId}:`, {
+    eventId,
+    eventType: event && typeof event === 'object' && 'type' in event ? (event as { type: string }).type : 'unknown',
+    timestamp: now
+  });
+  
+  // If this is a log entry with an ID, check for duplicates
+  if (eventId) {
+    const lastEvent = lastEmittedEvents.get(gameId);
+    // Prevent duplicate events within 1000ms and batch rapid updates
+    if (lastEvent?.id === eventId && (now - lastEvent.timestamp) < 1000) {
+      console.log(`[DEBUG] Skipping duplicate event ${eventId} (last emission was ${now - lastEvent.timestamp}ms ago)`);
+      return;
+    }
+    lastEmittedEvents.set(gameId, { id: eventId, timestamp: now });
+
+    // Use a longer debounce time for updates
+    const debounceTime = 250;
+    console.log(`[DEBUG] Scheduling debounced event emission for ${eventId} in ${debounceTime}ms`);
+    setTimeout(() => {
+      // Check again if this event is still relevant
+      const currentLastEvent = lastEmittedEvents.get(gameId);
+      if (currentLastEvent?.id === eventId) {
+        console.log(`[DEBUG] Emitting debounced event ${eventId}`);
+        ee.emit(`game:${gameId}`, event);
+      } else {
+        console.log(`[DEBUG] Skipping outdated debounced event ${eventId}`);
+      }
+    }, debounceTime);
+  } else {
+    console.log(`[DEBUG] Emitting non-tracked event for game ${gameId}`);
+    ee.emit(`game:${gameId}`, event);
+  }
+}
 
 // Input type for creating a new game
 const createGameInput = z.object({
@@ -37,7 +93,8 @@ async function updateGameLog(
       } : undefined,
     },
   });
-  ee.emit(`game:${gameId}`, entry);
+  
+  emitGameEvent(gameId, entry);
   return entry;
 }
 
@@ -135,21 +192,17 @@ async function evaluateObjectives(
     if (participant.publicObjective && participant.publicObjective.status === "PENDING") {
       let completed = false;
 
-      if (participant.publicObjective.targetMight && participant.might >= participant.publicObjective.targetMight) {
-        completed = true;
+      // Handle HIGHEST constraint
+      if (participant.publicObjective.targetMight && participant.publicObjective.targetMight > 0) {
+        const highestMight = Math.max(...participants.map(p => p.might));
+        if (participant.might >= participant.publicObjective.targetMight && participant.might === highestMight) {
+          completed = true;
+        }
       }
-      if (participant.publicObjective.targetEconomy && participant.economy >= participant.publicObjective.targetEconomy) {
-        completed = true;
-      }
-      if (participant.publicObjective.targetParticipantId) {
-        const targetParticipant = participants.find(p => p.id === participant.publicObjective?.targetParticipantId);
-        if (targetParticipant) {
-          // Check if combined might + economy is higher than target's
-          const participantTotal = participant.might + participant.economy;
-          const targetTotal = targetParticipant.might + targetParticipant.economy;
-          if (participantTotal > targetTotal) {
-            completed = true;
-          }
+      if (participant.publicObjective.targetEconomy && participant.publicObjective.targetEconomy > 0) {
+        const highestEconomy = Math.max(...participants.map(p => p.economy));
+        if (participant.economy >= participant.publicObjective.targetEconomy && participant.economy === highestEconomy) {
+          completed = true;
         }
       }
 
@@ -174,18 +227,21 @@ async function evaluateObjectives(
     if (participant.privateObjective && participant.privateObjective.status === "PENDING") {
       let completed = false;
 
-      if (participant.privateObjective.targetMight && participant.might >= participant.privateObjective.targetMight) {
-        completed = true;
-      }
-      if (participant.privateObjective.targetEconomy && participant.economy >= participant.privateObjective.targetEconomy) {
-        completed = true;
-      }
       if (participant.privateObjective.targetParticipantId) {
         const targetParticipant = participants.find(p => p.id === participant.privateObjective?.targetParticipantId);
         if (targetParticipant) {
-          // Example: If objective is to have higher economy than target
-          if (participant.economy > targetParticipant.economy) {
-            completed = true;
+          // Handle LOWEST constraint for specific player
+          if (participant.privateObjective.targetMight === 0) {
+            const lowestMight = Math.min(...participants.map(p => p.might));
+            if (targetParticipant.might === lowestMight) {
+              completed = true;
+            }
+          }
+          if (participant.privateObjective.targetEconomy === 0) {
+            const lowestEconomy = Math.min(...participants.map(p => p.economy));
+            if (targetParticipant.economy === lowestEconomy) {
+              completed = true;
+            }
           }
         }
       }
@@ -216,6 +272,29 @@ async function evaluateObjectives(
 
   // If this is the final evaluation, calculate winner
   if (isGameEnd) {
+    // Mark any remaining PENDING objectives as FAILED
+    const failUpdates = [];
+    for (const participant of participants) {
+      if (participant.publicObjective?.status === "PENDING") {
+        failUpdates.push(
+          db.objective.update({
+            where: { id: participant.publicObjective.id },
+            data: { status: "FAILED" },
+          })
+        );
+      }
+      if (participant.privateObjective?.status === "PENDING") {
+        failUpdates.push(
+          db.objective.update({
+            where: { id: participant.privateObjective.id },
+            data: { status: "FAILED" },
+          })
+        );
+      }
+    }
+    if (failUpdates.length > 0) {
+      await db.$transaction(failUpdates);
+    }
     return calculateWinner(db, gameId);
   }
 }
@@ -375,6 +454,70 @@ async function triggerAIActions(
   }
 }
 
+// Helper function to assign objectives to participants
+async function assignObjectives(
+  db: PrismaClient,
+  participants: GameParticipant[]
+) {
+  const updates = [];
+
+  // Randomly select a public objective with a default
+  const publicObjective = PUBLIC_OBJECTIVES[Math.floor(Math.random() * PUBLIC_OBJECTIVES.length)] ?? PUBLIC_OBJECTIVES[0];
+  if (!publicObjective) throw new Error("No public objectives defined");
+
+  // For each participant
+  for (const participant of participants) {
+    // Create their public objective
+    updates.push(
+      db.objective.create({
+        data: {
+          description: publicObjective.description(),
+          type: publicObjective.type,
+          isPublic: true,
+          status: "PENDING",
+          publicFor: {
+            connect: { id: participant.id }
+          },
+          // Set target values based on the objective
+          targetMight: publicObjective.target.field === "might" ? 100 : null,
+          targetEconomy: publicObjective.target.field === "economy" ? 100 : null,
+        },
+      })
+    );
+
+    // Select a random opponent for their private objective
+    const possibleTargets = participants.filter(p => p.id !== participant.id);
+    const targetParticipant = possibleTargets[Math.floor(Math.random() * possibleTargets.length)];
+    if (!targetParticipant) throw new Error("No valid target participant found");
+    
+    // Randomly select a private objective with a default
+    const privateObjective = PRIVATE_OBJECTIVES[Math.floor(Math.random() * PRIVATE_OBJECTIVES.length)] ?? PRIVATE_OBJECTIVES[0];
+    if (!privateObjective) throw new Error("No private objectives defined");
+
+    // Create their private objective
+    updates.push(
+      db.objective.create({
+        data: {
+          description: privateObjective.description(targetParticipant),
+          type: privateObjective.type,
+          isPublic: false,
+          status: "PENDING",
+          privateFor: {
+            connect: { id: participant.id }
+          },
+          targetParticipantId: targetParticipant.id,
+          // Set target values based on the objective
+          targetMight: privateObjective.target.field === "might" ? 0 : null,
+          targetEconomy: privateObjective.target.field === "economy" ? 0 : null,
+        },
+      })
+    );
+  }
+
+  // Execute all objective creations in a transaction
+  await db.$transaction(updates);
+}
+
 export const orchestratorRouter = createTRPCRouter({
   // Get current participant
   getCurrentParticipant: protectedProcedure
@@ -393,6 +536,31 @@ export const orchestratorRouter = createTRPCRouter({
       }
 
       return participant;
+    }),
+
+  // Get participant objectives
+  getParticipantObjectives: protectedProcedure
+    .input(z.object({
+      gameId: z.string(),
+      participantId: z.string(),
+    }))
+    .query(async ({ ctx, input }) => {
+      const participant = await ctx.db.gameParticipant.findUnique({
+        where: { id: input.participantId },
+        include: {
+          publicObjective: true,
+          privateObjective: true,
+        },
+      });
+
+      if (!participant) {
+        throw new Error("Participant not found");
+      }
+
+      return {
+        publicObjective: participant.publicObjective,
+        privateObjective: participant.privateObjective,
+      };
     }),
 
   // Create a new game
@@ -440,6 +608,9 @@ export const orchestratorRouter = createTRPCRouter({
         },
       });
 
+      // Assign objectives to all participants
+      await assignObjectives(ctx.db, game.participants);
+
       await updateGameLog(ctx.db, game.id, `Game started with ${input.civilization}`);
 
       // Trigger initial AI actions
@@ -482,7 +653,7 @@ export const orchestratorRouter = createTRPCRouter({
             },
           });
 
-          ee.emit(`game:${input.gameId}`, { 
+          emitGameEvent(input.gameId, { 
             type: 'GAME_UPDATE', 
             event: 'Game completed'
           });
@@ -514,7 +685,7 @@ export const orchestratorRouter = createTRPCRouter({
         // Trigger AI actions for the new proposal phase
         await triggerAIActions(ctx.db, input.gameId, GamePhase.PROPOSAL);
 
-        ee.emit(`game:${input.gameId}`, { 
+        emitGameEvent(input.gameId, { 
           type: 'GAME_UPDATE', 
           event: `Round ${game.currentRound} resolved. Starting Round ${game.currentRound + 1}` 
         });
@@ -539,7 +710,7 @@ export const orchestratorRouter = createTRPCRouter({
       // Trigger AI actions for the new phase
       await triggerAIActions(ctx.db, input.gameId, nextPhase);
 
-      ee.emit(`game:${input.gameId}`, { 
+      emitGameEvent(input.gameId, { 
         type: 'GAME_UPDATE', 
         event: `Game advanced to ${nextPhase} phase` 
       });
@@ -615,27 +786,100 @@ export const orchestratorRouter = createTRPCRouter({
       lastEventId: z.string().nullish(),
     }))
     .subscription(async function* ({ input, ctx }) {
+      console.log(`[DEBUG] New subscription started for game ${input.gameId}`);
+      
+      type GameUpdate = {
+        type: 'GAME_UPDATE';
+        event: string;
+      };
+
+      type LogEntry = {
+        id: string;
+        isPublic?: boolean;
+        visibleTo?: { id: string }[];
+      };
+
+      // Cache the participant check result
       const participant = await ctx.db.gameParticipant.findFirst({
         where: {
           gameId: input.gameId,
           userId: ctx.session.user.id,
         },
+        select: { id: true },
       });
 
-      if (!participant) return;
+      if (!participant) {
+        console.log(`[DEBUG] Subscription rejected - no participant found for game ${input.gameId}`);
+        return;
+      }
 
-      for await (const [update] of on(ee, `game:${input.gameId}`)) {
-        if (!update || typeof update !== 'object' || !('id' in update)) continue;
-        const updateId = (update as { id: string }).id;
-        const typedUpdate = await ctx.db.logEntry.findUnique({
-          where: { id: updateId },
-          include: { visibleTo: true }
+      console.log(`[DEBUG] Subscription authorized for participant ${participant.id} in game ${input.gameId}`);
+
+      // Create a cleanup function that removes specific listeners
+      const errorHandler = (err: Error) => {
+        console.log(`[DEBUG] Error in game subscription for ${input.gameId}:`, err);
+      };
+
+      const updateHandler = (update: unknown) => {
+        console.log(`[DEBUG] Received update for game ${input.gameId}:`, {
+          updateType: update && typeof update === 'object' && 'type' in update ? (update as { type: string }).type : 'unknown',
+          updateId: update && typeof update === 'object' && 'id' in update ? (update as { id: string }).id : undefined
         });
-        
-        if (typedUpdate?.isPublic || 
-            typedUpdate?.visibleTo?.some(p => p.id === participant.id)) {
-          yield tracked(typedUpdate.id, typedUpdate);
+      };
+
+      // Add listeners
+      ee.on(`game:${input.gameId}`, updateHandler);
+      ee.on('error', errorHandler);
+
+      const cleanup = () => {
+        console.log(`[DEBUG] Cleaning up subscription for game ${input.gameId}`);
+        ee.off(`game:${input.gameId}`, updateHandler);
+        ee.off('error', errorHandler);
+      };
+
+      try {
+        // Use a more efficient event handling approach
+        for await (const [update] of on(ee, `game:${input.gameId}`)) {
+          // Skip invalid updates early
+          if (!update || typeof update !== 'object') continue;
+
+          // Handle different types of updates
+          if (update && typeof update === 'object' && 'type' in update && 
+              (update as GameUpdate).type === 'GAME_UPDATE') {
+            const gameUpdate = update as GameUpdate;
+            yield tracked(gameUpdate.event, gameUpdate);
+          } else if (update && typeof update === 'object' && 'id' in update) {
+            // For log entries, only fetch if necessary
+            const logEntry = update as LogEntry;
+            
+            // If we already know it's public, yield immediately
+            if (logEntry.isPublic) {
+              yield tracked(logEntry.id, logEntry);
+              continue;
+            }
+
+            // Only query the database if we need to check visibility
+            const typedUpdate = await ctx.db.logEntry.findUnique({
+              where: { id: logEntry.id },
+              select: {
+                id: true,
+                isPublic: true,
+                visibleTo: {
+                  select: { id: true }
+                }
+              }
+            });
+            
+            if (typedUpdate?.isPublic || 
+                typedUpdate?.visibleTo?.some(p => p.id === participant.id)) {
+              yield tracked(typedUpdate.id, typedUpdate);
+            }
+          }
         }
+      } catch (err) {
+        console.error(`[DEBUG] Subscription error for game ${input.gameId}:`, err);
+      } finally {
+        cleanup();
       }
     }),
 

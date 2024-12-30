@@ -5,6 +5,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogClose,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import {
@@ -24,7 +25,8 @@ interface ProposalDialogProps {
   onSubmit: OnSubmitProposalFunction;
   opponents: Participant[];
   currentParticipantId: string;
-  initialRecipients?: string[];
+  initialParticipants?: string[];
+  initialTargets?: string[];
   remainingProposals?: number;
 }
 
@@ -33,52 +35,103 @@ export function ProposalDialog({
   onClose,
   onSubmit,
   opponents,
-  initialRecipients = [],
+  initialParticipants = [],
+  initialTargets = [],
   remainingProposals = 0,
 }: ProposalDialogProps) {
+
   const [description, setDescription] = useState("");
   const [type, setType] = useState<"TRADE" | "MILITARY" | "ALLIANCE">("TRADE");
   const [isPublic, setIsPublic] = useState(false);
-  const [selectedOpponents, setSelectedOpponents] = useState<string[]>(initialRecipients);
+  const [selectedParticipants, setSelectedParticipants] = useState<string[]>([]);
+  const [selectedTargets, setSelectedTargets] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  // Update selected opponents when initialRecipients changes
+  // Reset form when dialog opens
   useEffect(() => {
-    setSelectedOpponents(initialRecipients);
-  }, [initialRecipients]);
+
+    if (!open) {
+      return;
+    }
+
+    // Use a single batch update
+    const timer = setTimeout(() => {
+      setDescription("");
+      setType("TRADE");
+      setIsPublic(false);
+      setSelectedParticipants(initialParticipants);
+      setSelectedTargets(initialTargets);
+      setError(null);
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, [open]); // Only depend on open state
 
   const handleSubmit = async () => {
+
     try {
       setError(null);
       await onSubmit({
         description,
         type,
         isPublic,
-        recipients: selectedOpponents,
+        participants: selectedParticipants,
+        targets: selectedTargets,
       });
-      setDescription("");
-      setType("TRADE");
-      setIsPublic(false);
-      setSelectedOpponents([]);
       onClose();
     } catch (err) {
+      console.error('[ProposalDialog] Submit error:', err);
       setError(err instanceof Error ? err.message : "An error occurred");
     }
   };
 
-  const toggleOpponent = (opponentId: string) => {
-    setSelectedOpponents(prev => 
-      prev.includes(opponentId)
+  const toggleParticipant = (opponentId: string) => {
+    // Remove from targets if present
+    if (selectedTargets.includes(opponentId)) {
+      setSelectedTargets(prev => prev.filter(id => id !== opponentId));
+    }
+    setSelectedParticipants(prev => {
+      const newParticipants = prev.includes(opponentId)
         ? prev.filter(id => id !== opponentId)
-        : [...prev, opponentId]
-    );
+        : [...prev, opponentId];
+      return newParticipants;
+    });
+  };
+
+  const toggleTarget = (opponentId: string) => {
+    // Remove from participants if present
+    if (selectedParticipants.includes(opponentId)) {
+      setSelectedParticipants(prev => prev.filter(id => id !== opponentId));
+    }
+    setSelectedTargets(prev => {
+      const newTargets = prev.includes(opponentId)
+        ? prev.filter(id => id !== opponentId)
+        : [...prev, opponentId];
+      return newTargets;
+    });
   };
 
   const isDisabled = remainingProposals <= 0;
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="bg-[#1a1b23] border border-white/10 text-white shadow-xl">
+    <Dialog 
+      open={open} 
+      onOpenChange={(isOpen) => {
+        if (!isOpen) {
+          onClose();
+        }
+      }}
+    >
+      <DialogContent 
+        className="bg-[#1a1b23] border border-white/10 text-white shadow-xl"
+        onInteractOutside={(e) => {
+          e.preventDefault();
+        }}
+        onEscapeKeyDown={(e) => {
+          e.preventDefault();
+          onClose();
+        }}
+      >
         <DialogHeader>
           <DialogTitle className="text-xl font-bold text-white">Make a Proposal</DialogTitle>
           <DialogDescription className="text-white/70">
@@ -129,26 +182,52 @@ export function ProposalDialog({
             />
           </div>
 
-          <div>
-            <Label className="text-white/70 mb-2 block">Recipients</Label>
-            <div className="grid grid-cols-2 gap-2">
-              {opponents.map((opponent) => (
-                <Button
-                  key={opponent.id}
-                  variant="outline"
-                  size="default"
-                  onClick={() => toggleOpponent(opponent.id)}
-                  disabled={isDisabled}
-                  className={
-                    selectedOpponents.includes(opponent.id)
-                      ? "bg-[#9333EA] hover:bg-[#A855F7] border-[#9333EA] text-white disabled:opacity-50"
-                      : "bg-[#1E293B] hover:bg-[#334155] border-[#334155] text-white disabled:opacity-50"
-                  }
-                >
-                  {opponent.name}
-                </Button>
-              ))}
+          <div className="space-y-4">
+            <div>
+              <Label className="text-white/70 mb-2 block">Participants</Label>
+              <div className="grid grid-cols-2 gap-2">
+                {opponents.map((opponent) => (
+                  <Button
+                    key={`participant-${opponent.id}`}
+                    variant="outline"
+                    size="default"
+                    onClick={() => toggleParticipant(opponent.id)}
+                    disabled={isDisabled}
+                    className={
+                      selectedParticipants.includes(opponent.id)
+                        ? "bg-[#9333EA] hover:bg-[#A855F7] border-[#9333EA] text-white disabled:opacity-50"
+                        : "bg-[#1E293B] hover:bg-[#334155] border-[#334155] text-white disabled:opacity-50"
+                    }
+                  >
+                    {opponent.name}
+                  </Button>
+                ))}
+              </div>
             </div>
+
+            {type === "MILITARY" && (
+              <div>
+                <Label className="text-white/70 mb-2 block">Targets</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {opponents.map((opponent) => (
+                    <Button
+                      key={`target-${opponent.id}`}
+                      variant="outline"
+                      size="default"
+                      onClick={() => toggleTarget(opponent.id)}
+                      disabled={isDisabled}
+                      className={
+                        selectedTargets.includes(opponent.id)
+                          ? "bg-red-600 hover:bg-red-700 border-red-600 text-white disabled:opacity-50"
+                          : "bg-[#1E293B] hover:bg-[#334155] border-[#334155] text-white disabled:opacity-50"
+                      }
+                    >
+                      {opponent.name}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center space-x-2">
@@ -168,16 +247,23 @@ export function ProposalDialog({
           </div>
 
           <div className="flex justify-end space-x-2 pt-2">
-            <Button 
-              variant="outline" 
-              onClick={onClose}
-              className="bg-[#1E293B] hover:bg-[#334155] border-[#334155] text-white"
-            >
-              Cancel
-            </Button>
+            <DialogClose asChild>
+              <Button 
+                variant="outline" 
+                onClick={onClose}
+                className="bg-[#1E293B] hover:bg-[#334155] border-[#334155] text-white"
+              >
+                Cancel
+              </Button>
+            </DialogClose>
             <Button 
               onClick={() => void handleSubmit()}
-              disabled={isDisabled || description.trim() === '' || selectedOpponents.length === 0}
+              disabled={
+                isDisabled || 
+                description.trim() === '' || 
+                selectedParticipants.length === 0 ||
+                (type === "MILITARY" && selectedTargets.length === 0)
+              }
               className="bg-[#9333EA] hover:bg-[#A855F7] text-white disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Submit

@@ -146,17 +146,22 @@ model Proposal {
   // Relations
   creator      GameParticipant       @relation("CreatedProposals", fields: [creatorId], references: [id])
   creatorId    String
-  participants ProposalParticipant[]
+  participants ProposalParticipant[] @relation("ProposalParticipants")
+  targets      ProposalParticipant[] @relation("ProposalTargets")
   votes        Vote[]
 }
 
-// Join table for proposal participants
+// Join table for proposal participants and targets
 model ProposalParticipant {
-  proposal      Proposal        @relation(fields: [proposalId], references: [id])
+  proposal      Proposal        @relation("ProposalParticipants", fields: [proposalId], references: [id])
   proposalId    String
   participant   GameParticipant @relation(fields: [participantId], references: [id])
   participantId String
-  role          String // "CREATOR" or "RECIPIENT"
+  role          String // "CREATOR", "PARTICIPANT", or "TARGET"
+
+  // For target relationships
+  targetProposal   Proposal? @relation("ProposalTargets", fields: [targetProposalId], references: [id])
+  targetProposalId String?
 
   @@id([proposalId, participantId])
 }
