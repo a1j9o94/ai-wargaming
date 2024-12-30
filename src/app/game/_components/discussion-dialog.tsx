@@ -26,7 +26,7 @@ export function DiscussionDialog({
   const [selectedParticipants, setSelectedParticipants] = useState<string[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const sendMessage = api.game.sendMessage.useMutation();
+  const sendMessage = api.game.discussion.sendMessage.useMutation();
 
   // Filter out current player from opponents list
   const filteredOpponents = opponents.filter(opponent => opponent.id !== currentParticipantId);
@@ -36,7 +36,7 @@ export function DiscussionDialog({
     window.location.pathname.split('/')[2] ?? '' : '';
 
   // Get or create discussion when participants change
-  const { data: discussion, isLoading, refetch } = api.game.getDiscussion.useQuery(
+  const { data: discussion, isLoading, refetch } = api.game.discussion.getDiscussion.useQuery(
     { 
       gameId,
       participantIds: [currentParticipantId, ...selectedParticipants].sort()
@@ -64,7 +64,7 @@ export function DiscussionDialog({
   }, [discussion, selectedParticipants]);
 
   // Subscribe to new messages
-  api.game.onNewMessage.useSubscription(
+  api.game.discussion.onNewMessage.useSubscription(
     { discussionId: discussion?.id ?? '', lastEventId: null },
     {
       onData(data: unknown) {
@@ -88,15 +88,6 @@ export function DiscussionDialog({
       enabled: Boolean(open && discussion?.id),
     }
   );
-
-  // Debug logging
-  useEffect(() => {
-    if (process.env.NODE_ENV === 'development') {
-      console.log('Selected participants:', [currentParticipantId, ...selectedParticipants].sort());
-      console.log('Current discussion:', discussion);
-      console.log('Messages:', messages);
-    }
-  }, [selectedParticipants, discussion, messages, currentParticipantId]);
 
   // Scroll to bottom when new messages arrive
   useEffect(() => {

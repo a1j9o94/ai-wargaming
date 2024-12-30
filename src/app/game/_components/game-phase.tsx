@@ -30,7 +30,7 @@ export function GamePhase({
   const [isProposalDialogOpen, setIsProposalDialogOpen] = useState(false);
   const [pendingMessages, setPendingMessages] = useState<string[]>([]);
 
-  api.game.onGameUpdate.useSubscription(
+  api.game.orchestrator.onGameUpdate.useSubscription(
     { gameId },
     {
       onData(update) {

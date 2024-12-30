@@ -9,7 +9,7 @@ export default function GamePage() {
   const router = useRouter();
 
   // Create game mutation
-  const createGameMutation = api.game.create.useMutation({
+  const createGameMutation = api.game.orchestrator.create.useMutation({
     onSuccess: (game) => {
       router.push(`/game/${game.id}`);
     },

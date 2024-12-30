@@ -57,12 +57,12 @@ export function GameContainer({ gameId }: GameContainerProps) {
   const [currentDiscussion, setCurrentDiscussion] = useState<Discussion | null>(null);
 
   // Query game state
-  const { data: gameState, refetch: refetchGameState } = api.game.getGameState.useQuery(
+  const { data: gameState, refetch: refetchGameState } = api.game.orchestrator.getGameState.useQuery(
     { gameId }
   );
 
   // Subscribe to game updates
-  api.game.onGameUpdate.useSubscription(
+  api.game.orchestrator.onGameUpdate.useSubscription(
     { gameId, lastEventId: null },
     {
       onData(update) {
@@ -73,7 +73,7 @@ export function GameContainer({ gameId }: GameContainerProps) {
   );
 
   // Subscribe to chat messages if in a discussion
-  api.game.onNewMessage.useSubscription(
+  api.game.discussion.onNewMessage.useSubscription(
     { discussionId: currentDiscussion?.id ?? "0", lastEventId: null },
     {
       onData(message: ChatResponse) {
@@ -94,19 +94,19 @@ export function GameContainer({ gameId }: GameContainerProps) {
   );
 
   // Mutations
-  const makeProposalMutation = api.game.makeProposal.useMutation({
+  const makeProposalMutation = api.game.proposal.makeProposal.useMutation({
     onSuccess: () => void refetchGameState(),
   });
 
-  const voteMutation = api.game.vote.useMutation({
+  const voteMutation = api.game.proposal.vote.useMutation({
     onSuccess: () => void refetchGameState(),
   });
 
-  const updateDiscussionMutation = api.game.updateDiscussionParticipants.useMutation({
+  const updateDiscussionMutation = api.game.discussion.updateDiscussionParticipants.useMutation({
     onSuccess: () => void refetchGameState(),
   });
 
-  const advancePhaseMutation = api.game.advancePhase.useMutation({
+  const advancePhaseMutation = api.game.orchestrator.advancePhase.useMutation({
     onSuccess: () => void refetchGameState(),
   });
 
