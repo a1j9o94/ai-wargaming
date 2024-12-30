@@ -1,26 +1,26 @@
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { type Participant, type MakeProposalFunction } from "~/types/game";
-import { useState } from "react";
-import { ProposalDialog } from "./proposal-dialog";
+import { type Participant } from "~/types/game";
 
 interface OpponentCardProps {
   opponent: Participant;
   currentParticipantId: string;
-  onMakeProposal: MakeProposalFunction;
   onOpenDiscussion: (participantIds: string[]) => void;
+  onOpenProposal: (recipientIds: string[]) => void;
 }
 
 export function OpponentCard({ 
   opponent,
   currentParticipantId,
-  onMakeProposal,
-  onOpenDiscussion
+  onOpenDiscussion,
+  onOpenProposal
 }: OpponentCardProps) {
-  const [isProposalDialogOpen, setIsProposalDialogOpen] = useState(false);
-
   const handleOpenDiscussion = () => {
     onOpenDiscussion([currentParticipantId, opponent.id]);
+  };
+
+  const handleOpenProposal = () => {
+    onOpenProposal([opponent.id]);
   };
 
   return (
@@ -64,25 +64,13 @@ export function OpponentCard({
           <Button 
             variant="outline" 
             size="sm" 
-            onClick={() => setIsProposalDialogOpen(true)}
+            onClick={handleOpenProposal}
             className="flex-1 h-8 px-3 text-sm bg-white/5 border-white/10 hover:bg-white/10 text-white hover:text-white"
           >
             Propose
           </Button>
         </div>
       </div>
-
-      <ProposalDialog
-        open={isProposalDialogOpen}
-        onClose={() => setIsProposalDialogOpen(false)}
-        onSubmit={async (data) => {
-          await onMakeProposal({
-            ...data,
-            recipients: [opponent.id]
-          });
-          setIsProposalDialogOpen(false);
-        }}
-      />
     </Card>
   );
 } 

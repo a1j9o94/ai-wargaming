@@ -4,10 +4,11 @@ import {
   protectedProcedure,
 } from "~/server/api/trpc";
 import { EventEmitter, on } from "events";
-import { tracked } from "@trpc/server";
+import type { PrismaClient } from "@prisma/client";
+import { handleAIMessageResponse } from "./ai-player";
 
 // Create event emitter for discussion events
-const ee = new EventEmitter();
+export const ee = new EventEmitter();
 
 // Input type for sending a message
 const messageInput = z.object({
@@ -23,85 +24,134 @@ const updateDiscussionInput = z.object({
   gameId: z.string(),
 });
 
+// Helper function to trigger AI responses to a message
+async function triggerAIResponses(
+  db: PrismaClient,
+  discussionId: string,
+  senderId: string
+) {
+  // Get all AI participants in the discussion except the sender
+  const discussion = await db.discussion.findUnique({
+    where: { id: discussionId },
+    include: {
+      participants: {
+        where: {
+          isAI: true,
+          id: { not: senderId },
+        },
+      },
+    },
+  });
+
+  if (!discussion) return;
+
+  // Have each AI respond to the message
+  for (const ai of discussion.participants) {
+    await handleAIMessageResponse(db, discussionId, ai.id);
+  }
+}
+
+// Core message creation logic
+export async function createMessage(
+  db: PrismaClient,
+  input: z.infer<typeof messageInput>
+) {
+  const discussion = await db.discussion.findUnique({
+    where: { id: input.discussionId },
+    include: {
+      participants: true,
+    },
+  });
+
+  if (!discussion) throw new Error("Discussion not found");
+
+  const sender = await db.gameParticipant.findFirst({
+    where: {
+      id: input.senderId,
+      gameId: discussion.gameId,
+    },
+  });
+
+  if (!sender) throw new Error("Sender not found");
+
+  const message = await db.chatMessage.create({
+    data: {
+      content: input.content,
+      discussion: { connect: { id: input.discussionId } },
+      sender: { connect: { id: sender.id } },
+      User: sender.userId ? { connect: { id: sender.userId } } : undefined,
+    },
+  });
+
+  const chatMessage = {
+    id: message.id,
+    content: message.content,
+    senderId: input.senderId,
+    timestamp: message.createdAt.toISOString()
+  };
+
+  ee.emit(`chat:${input.discussionId}`, chatMessage);
+
+  // Trigger AI responses if the sender is not an AI
+  if (!sender.isAI) {
+    await triggerAIResponses(db, input.discussionId, input.senderId);
+  }
+
+  return message;
+}
+
+// Core discussion update logic
+export async function updateDiscussion(
+  db: PrismaClient,
+  input: z.infer<typeof updateDiscussionInput>
+) {
+  // If discussionId is -1, create a new discussion
+  if (input.discussionId === "-1") {
+    const discussion = await db.discussion.create({
+      data: {
+        game: { connect: { id: input.gameId }},
+        participants: {
+          connect: input.participantIds.map(id => ({ id })),
+        },
+      },
+      include: {
+        participants: true,
+      },
+    });
+
+    return discussion;
+  }
+
+  // Otherwise, update existing discussion
+  const discussion = await db.discussion.update({
+    where: { id: input.discussionId },
+    data: {
+      participants: {
+        set: [], // First clear existing participants
+        connect: input.participantIds.map(id => ({ id })), // Then add new ones
+      },
+    },
+    include: {
+      participants: true,
+    },
+  });
+
+  return discussion;
+}
+
 export const discussionRouter = createTRPCRouter({
   // Send a message in a discussion
   sendMessage: protectedProcedure
     .input(messageInput)
     .mutation(async ({ ctx, input }) => {
-      const discussion = await ctx.db.discussion.findUnique({
-        where: { id: input.discussionId },
-        include: {
-          participants: true,
-        },
-      });
-
-      if (!discussion) throw new Error("Discussion not found");
-
-      const sender = await ctx.db.gameParticipant.findFirst({
-        where: {
-          id: input.senderId,
-          gameId: discussion.gameId,
-        },
-      });
-
-      if (!sender) throw new Error("Sender not found");
-
-      const message = await ctx.db.chatMessage.create({
-        data: {
-          content: input.content,
-          discussion: { connect: { id: input.discussionId } },
-          sender: { connect: { id: sender.id } },
-          User: sender.userId ? { connect: { id: sender.userId } } : undefined,
-        },
-      });
-
-      const chatMessage = {
-        id: message.id,
-        content: message.content,
-        senderId: input.senderId,
-        timestamp: message.createdAt.toISOString()
-      };
-
-      ee.emit(`chat:${input.discussionId}`, chatMessage);
-      return message;
+      return createMessage(ctx.db, input);
     }),
 
   // Update discussion participants
   updateDiscussionParticipants: protectedProcedure
     .input(updateDiscussionInput)
     .mutation(async ({ ctx, input }) => {
-      // If discussionId is -1, create a new discussion
-      if (input.discussionId === "-1") {
-        const discussion = await ctx.db.discussion.create({
-          data: {
-            game: { connect: { id: input.gameId }},
-            participants: {
-              connect: input.participantIds.map(id => ({ id })),
-            },
-          },
-          include: {
-            participants: true,
-          },
-        });
-
-        return discussion;
-      }
-
-      // Otherwise, update existing discussion
-      const discussion = await ctx.db.discussion.update({
-        where: { id: input.discussionId },
-        data: {
-          participants: {
-            set: [], // First clear existing participants
-            connect: input.participantIds.map(id => ({ id })), // Then add new ones
-          },
-        },
-        include: {
-          participants: true,
-        },
-      });
-
-      return discussion;
+      return updateDiscussion(ctx.db, input);
     }),
 
   //get a discussion based on a game id and a list of participant ids
@@ -183,13 +233,13 @@ export const discussionRouter = createTRPCRouter({
       }
 
       // If we get here, everything is valid - subscribe to messages
-      for await (const [message] of on(ee, `chat:${input.discussionId}`)) {
-        try {
+      try {
+        for await (const [message] of on(ee, `chat:${input.discussionId}`)) {
           yield message;
-        } catch (error) {
-          console.error('Error processing message:', error);
-          yield { type: 'error', message: 'Error processing message' };
         }
+      } catch (error) {
+        console.error('Error processing message:', error);
+        yield { type: 'error', message: 'Error processing message' };
       }
     }),
 });

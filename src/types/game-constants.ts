@@ -1,0 +1,1 @@
+export const PROPOSALS_PER_ROUND = 2; 

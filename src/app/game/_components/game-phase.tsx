@@ -1,6 +1,5 @@
 import { Button } from "@/components/ui/button";
-import type { GamePhase as GamePhaseType, Proposal, MakeProposalFunction, Participant } from "~/types/game";
-import { ProposalDialog } from "./proposal-dialog";
+import type { GamePhase as GamePhaseType, Proposal, Participant } from "~/types/game";
 import { useState } from "react";
 import { api } from "~/trpc/react";
 
@@ -10,10 +9,10 @@ interface GamePhaseProps {
   gameId: string;
   currentParticipantId: string;
   opponents: Participant[];
-  onMakeProposal: MakeProposalFunction;
   onVote: (proposalId: string, support: boolean) => Promise<void>;
   onAdvancePhase: () => Promise<void>;
   onOpenDiscussion: (participantIds: string[]) => void;
+  onOpenProposal: (recipientIds: string[]) => void;
 }
 
 export function GamePhase({
@@ -22,13 +21,13 @@ export function GamePhase({
   gameId,
   currentParticipantId,
   opponents,
-  onMakeProposal,
   onVote,
   onAdvancePhase,
   onOpenDiscussion,
+  onOpenProposal,
 }: GamePhaseProps) {
-  const [isProposalDialogOpen, setIsProposalDialogOpen] = useState(false);
   const [pendingMessages, setPendingMessages] = useState<string[]>([]);
+  const [votedProposals, setVotedProposals] = useState<Set<string>>(new Set());
 
   api.game.orchestrator.onGameUpdate.useSubscription(
     { gameId },
@@ -50,6 +49,16 @@ export function GamePhase({
     onOpenDiscussion([currentParticipantId, ...opponents.map(o => o.id)]);
   };
 
+  const handleOpenGroupProposal = () => {
+    // Open proposal with all opponents
+    onOpenProposal(opponents.map(o => o.id));
+  };
+
+  const handleVote = async (proposalId: string, support: boolean) => {
+    await onVote(proposalId, support);
+    setVotedProposals(prev => new Set([...prev, proposalId]));
+  };
+
   const renderPhaseContent = () => {
     switch (phase) {
       case "PROPOSAL":
@@ -57,7 +66,7 @@ export function GamePhase({
           <div className="space-y-4">
             <h3 className="text-lg font-semibold">Proposal Phase</h3>
             <div className="flex space-x-4">
-              <Button variant="outline" onClick={() => setIsProposalDialogOpen(true)}>
+              <Button variant="outline" onClick={handleOpenGroupProposal}>
                 Make Proposal
               </Button>
               <Button variant="outline" onClick={() => void onAdvancePhase()}>
@@ -71,32 +80,43 @@ export function GamePhase({
         );
 
       case "VOTING":
+        const unvotedProposals = proposals.filter(
+          (proposal) => !votedProposals.has(proposal.id)
+        );
+
         return (
           <div className="space-y-4">
             <h3 className="text-lg font-semibold">Voting Phase</h3>
             <div className="space-y-4">
-              {proposals.map((proposal) => (
-                <div
-                  key={proposal.id}
-                  className="rounded-lg border bg-card p-4 space-y-2"
-                >
-                  <p>{proposal.description}</p>
-                  <div className="flex space-x-2">
-                    <Button
-                      variant="outline"
-                      onClick={() => void onVote(proposal.id, true)}
-                    >
-                      Support
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => void onVote(proposal.id, false)}
-                    >
-                      Oppose
-                    </Button>
-                  </div>
+              {unvotedProposals.length === 0 ? (
+                <div>
+                  <p className="text-sm text-muted-foreground">No pending proposals to vote on.</p>
+                  <Button onClick={() => void onAdvancePhase()}>Advance Phase</Button>
                 </div>
-              ))}
+              ) : (
+                unvotedProposals.map((proposal) => (
+                  <div
+                    key={proposal.id}
+                    className="rounded-lg border bg-card p-4 space-y-2"
+                  >
+                    <p>{proposal.description}</p>
+                    <div className="flex space-x-2">
+                      <Button
+                        variant="outline"
+                        onClick={() => void handleVote(proposal.id, true)}
+                      >
+                        Support
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => void handleVote(proposal.id, false)}
+                      >
+                        Oppose
+                      </Button>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         );
@@ -114,6 +134,7 @@ export function GamePhase({
           <div className="space-y-4">
             <h3 className="text-lg font-semibold">{phase} Phase</h3>
             <p>Waiting for other players...</p>
+            <Button onClick={() => void onAdvancePhase()}>Advance Phase</Button>
           </div>
         );
     }
@@ -128,14 +149,6 @@ export function GamePhase({
         </div>
       ))}
       {renderPhaseContent()}
-      <ProposalDialog
-        open={isProposalDialogOpen}
-        onClose={() => setIsProposalDialogOpen(false)}
-        onSubmit={async (data) => {
-          await onMakeProposal(data);
-          setIsProposalDialogOpen(false);
-        }}
-      />
     </div>
   );
 } 

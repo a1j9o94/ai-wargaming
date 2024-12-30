@@ -17,7 +17,7 @@ export function UserNav({ user }: UserNavProps) {
 
   return (
     <div className="flex items-center gap-4">
-      <Link href="/game">
+      <Link href="/game/active_games">
         <Button variant="ghost" className="text-sm font-medium text-[#60A5FA] hover:text-[#60A5FA]/80 hover:bg-[#1E3A8A]/20">
           Current Mission
         </Button>

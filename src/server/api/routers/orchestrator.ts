@@ -4,9 +4,11 @@ import {
   protectedProcedure,
 } from "~/server/api/trpc";
 import { GamePhase } from "~/types/game";
+import { PROPOSALS_PER_ROUND } from "~/types/game-constants";
 import type { PrismaClient } from "@prisma/client";
 import { EventEmitter, on } from "events";
 import { tracked } from "@trpc/server";
+import { handleAIPhaseActions } from "./ai-player";
 
 // Create event emitter for game events
 const ee = new EventEmitter();
@@ -39,7 +41,47 @@ async function updateGameLog(
   return entry;
 }
 
+// Helper function to trigger AI actions for all AI players
+async function triggerAIActions(
+  db: PrismaClient,
+  gameId: string,
+  phase: GamePhase
+) {
+  const aiParticipants = await db.gameParticipant.findMany({
+    where: {
+      gameId,
+      isAI: true,
+    },
+  });
+
+  // Only trigger actions in relevant phases
+  if (phase === GamePhase.PROPOSAL || phase === GamePhase.VOTING) {
+    for (const ai of aiParticipants) {
+      await handleAIPhaseActions(db, gameId, phase, ai.id);
+    }
+  }
+}
+
 export const orchestratorRouter = createTRPCRouter({
+  // Get current participant
+  getCurrentParticipant: protectedProcedure
+    .input(z.object({ gameId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const participant = await ctx.db.gameParticipant.findFirst({
+        where: {
+          gameId: input.gameId,
+          userId: ctx.session.user.id,
+          isAI: false,
+        },
+      });
+
+      if (!participant) {
+        throw new Error("Not a participant in this game");
+      }
+
+      return participant;
+    }),
+
   // Create a new game
   create: protectedProcedure
     .input(createGameInput)
@@ -54,23 +96,28 @@ export const orchestratorRouter = createTRPCRouter({
                 civilization: input.civilization,
                 userId: ctx.session.user.id,
                 isAI: false,
+                remainingProposals: PROPOSALS_PER_ROUND,
               },
               // Add AI opponents
               {
                 civilization: "Centauri Republic",
                 isAI: true,
+                remainingProposals: PROPOSALS_PER_ROUND,
               },
               {
                 civilization: "Sirius Confederation",
                 isAI: true,
+                remainingProposals: PROPOSALS_PER_ROUND,
               },
               {
                 civilization: "Proxima Alliance",
                 isAI: true,
+                remainingProposals: PROPOSALS_PER_ROUND,
               },
               {
                 civilization: "Vega Dominion",
                 isAI: true,
+                remainingProposals: PROPOSALS_PER_ROUND,
               },
             ],
           },
@@ -82,17 +129,69 @@ export const orchestratorRouter = createTRPCRouter({
 
       await updateGameLog(ctx.db, game.id, `Game started with ${input.civilization}`);
 
+      // Trigger initial AI actions
+      await triggerAIActions(ctx.db, game.id, GamePhase.PROPOSAL);
+
       return game;
+    }),
+
+  // Advance game phase
+  advancePhase: protectedProcedure
+    .input(z.object({ gameId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const game = await ctx.db.game.findUnique({
+        where: { id: input.gameId },
+      });
+
+      if (!game) throw new Error("Game not found");
+
+      const nextPhase = game.phase === GamePhase.SETUP ? GamePhase.PROPOSAL
+        : game.phase === GamePhase.PROPOSAL ? GamePhase.DISCUSSION
+        : game.phase === GamePhase.DISCUSSION ? GamePhase.VOTING
+        : game.phase === GamePhase.VOTING ? GamePhase.RESOLVE
+        : game.phase === GamePhase.RESOLVE ? GamePhase.PROPOSAL
+        : GamePhase.COMPLETED;
+
+      const shouldIncrementRound = game.phase === GamePhase.RESOLVE;
+
+      const updatedGame = await ctx.db.game.update({
+        where: { id: input.gameId },
+        data: {
+          phase: nextPhase,
+          currentRound: shouldIncrementRound ? { increment: 1 } : undefined,
+        },
+      });
+
+      // Reset remaining proposals when starting a new round
+      if (shouldIncrementRound) {
+        await ctx.db.gameParticipant.updateMany({
+          where: { gameId: input.gameId },
+          data: { remainingProposals: PROPOSALS_PER_ROUND },
+        });
+      }
+
+      await updateGameLog(
+        ctx.db,
+        input.gameId,
+        `Game advanced to ${nextPhase} phase${shouldIncrementRound ? ` (Round ${game.currentRound + 1})` : ''}`
+      );
+
+      // Trigger AI actions for the new phase
+      await triggerAIActions(ctx.db, input.gameId, nextPhase);
+
+      ee.emit(`game:${input.gameId}`, { type: 'GAME_UPDATE', event: `Game advanced to ${nextPhase} phase${shouldIncrementRound ? ` (Round ${game.currentRound + 1})` : ''}` });
+
+      return updatedGame;
     }),
 
   // Get current game state
   getGameState: protectedProcedure
-    .input(z.object({ gameId: z.string() }))
+    .input(z.object({ gameId: z.string(), participantId: z.string() }))
     .query(async ({ ctx, input }) => {
       const currentParticipant = await ctx.db.gameParticipant.findFirst({
         where: {
           gameId: input.gameId,
-          userId: ctx.session.user.id,
+          id: input.participantId,
         },
       });
 
@@ -144,44 +243,6 @@ export const orchestratorRouter = createTRPCRouter({
           },
         },
       });
-    }),
-
-  // Advance game phase
-  advancePhase: protectedProcedure
-    .input(z.object({ gameId: z.string() }))
-    .mutation(async ({ ctx, input }) => {
-      const game = await ctx.db.game.findUnique({
-        where: { id: input.gameId },
-      });
-
-      if (!game) throw new Error("Game not found");
-
-      const nextPhase = game.phase === GamePhase.SETUP ? GamePhase.PROPOSAL
-        : game.phase === GamePhase.PROPOSAL ? GamePhase.DISCUSSION
-        : game.phase === GamePhase.DISCUSSION ? GamePhase.VOTING
-        : game.phase === GamePhase.VOTING ? GamePhase.RESOLVE
-        : game.phase === GamePhase.RESOLVE ? GamePhase.PROPOSAL
-        : GamePhase.COMPLETED;
-
-      const shouldIncrementRound = game.phase === GamePhase.RESOLVE;
-
-      await ctx.db.game.update({
-        where: { id: input.gameId },
-        data: {
-          phase: nextPhase,
-          currentRound: shouldIncrementRound ? { increment: 1 } : undefined,
-        },
-      });
-
-      await updateGameLog(
-        ctx.db,
-        input.gameId,
-        `Game advanced to ${nextPhase} phase${shouldIncrementRound ? ` (Round ${game.currentRound + 1})` : ''}`
-      );
-
-      ee.emit(`game:${input.gameId}`, { type: 'GAME_UPDATE', event: `Game advanced to ${nextPhase} phase${shouldIncrementRound ? ` (Round ${game.currentRound + 1})` : ''}` });
-
-      return game;
     }),
 
   // Subscribe to game updates

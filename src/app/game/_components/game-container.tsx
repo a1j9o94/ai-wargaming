@@ -9,6 +9,7 @@ import { OpponentGrid } from "./opponent-grid";
 import { PhaseAnnouncement } from "./phase-announcement";
 import { StatusPanel } from "./status-panel";
 import { DiscussionDialog } from "./discussion-dialog";
+import { ProposalDialog } from "./proposal-dialog";
 
 interface GameContainerProps {
   gameId: string;
@@ -55,10 +56,18 @@ export function GameContainer({ gameId }: GameContainerProps) {
   const [lastPhase, setLastPhase] = useState<GamePhase | null>(null);
   const [showDiscussionDialog, setShowDiscussionDialog] = useState(false);
   const [currentDiscussion, setCurrentDiscussion] = useState<Discussion | null>(null);
+  const [showProposalDialog, setShowProposalDialog] = useState(false);
+  const [proposalRecipients, setProposalRecipients] = useState<string[]>([]);
 
-  // Query game state
-  const { data: gameState, refetch: refetchGameState } = api.game.orchestrator.getGameState.useQuery(
+  // Get current participant first
+  const { data: participant } = api.game.orchestrator.getCurrentParticipant.useQuery(
     { gameId }
+  );
+
+  // Query game state with participant ID
+  const { data: gameState, refetch: refetchGameState } = api.game.orchestrator.getGameState.useQuery(
+    { gameId, participantId: participant?.id ?? "" },
+    { enabled: !!participant }
   );
 
   // Subscribe to game updates
@@ -136,14 +145,14 @@ export function GameContainer({ gameId }: GameContainerProps) {
     }
   }, [gameState, currentDiscussion]);
 
-  if (!gameState) {
+  if (!gameState || !participant) {
     return <div className="flex min-h-screen items-center justify-center text-white">
       <div className="animate-pulse text-lg">Loading game state...</div>
     </div>;
   }
 
   const currentParticipant = gameState.participants.find(
-    (p) => p.userId !== null && !p.isAI
+    (p) => p.id === participant.id
   );
 
   if (!currentParticipant) {
@@ -234,6 +243,16 @@ export function GameContainer({ gameId }: GameContainerProps) {
     setCurrentDiscussion(null);
   };
 
+  const handleOpenProposal = (recipientIds: string[] = []) => {
+    setProposalRecipients(recipientIds);
+    setShowProposalDialog(true);
+  };
+
+  const handleCloseProposal = () => {
+    setShowProposalDialog(false);
+    setProposalRecipients([]);
+  };
+
   return (
     <div className="container mx-auto min-h-screen p-6">
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -248,11 +267,11 @@ export function GameContainer({ gameId }: GameContainerProps) {
             gameId={gameId}
             phase={gameState.phase as GamePhase}
             currentParticipantId={currentParticipant.id}
-            onMakeProposal={handleMakeProposal}
             onVote={handleVote}
             onAdvancePhase={handleAdvancePhase}
             onOpenDiscussion={handleOpenDiscussion}
-            opponents={gameState.participants.map(p => ({
+            onOpenProposal={handleOpenProposal}
+            opponents={gameState.participants.filter(p => p.id !== currentParticipant.id).map(p => ({
               id: p.id,
               name: p.civilization,
               civilization: p.civilization,
@@ -282,7 +301,7 @@ export function GameContainer({ gameId }: GameContainerProps) {
         {/* Middle column - Opponents */}
         <div className="lg:col-span-2">
           <OpponentGrid
-            opponents={gameState.participants.map(p => ({
+            opponents={gameState.participants.filter(p => p.id !== currentParticipant.id).map(p => ({
               id: p.id,
               name: p.civilization,
               civilization: p.civilization,
@@ -294,8 +313,8 @@ export function GameContainer({ gameId }: GameContainerProps) {
             }))}
             gameId={gameId}
             currentParticipantId={currentParticipant.id}
-            onMakeProposal={handleMakeProposal}
             onOpenDiscussion={handleOpenDiscussion}
+            onOpenProposal={handleOpenProposal}
           />
         </div>
       </div>
@@ -321,7 +340,7 @@ export function GameContainer({ gameId }: GameContainerProps) {
         <DiscussionDialog
           open={showDiscussionDialog}
           onClose={handleCloseDiscussion}
-          opponents={gameState.participants.map(p => ({
+          opponents={gameState.participants.filter(p => p.id !== currentParticipant.id).map(p => ({
             id: p.id,
             name: p.civilization,
             civilization: p.civilization,
@@ -334,6 +353,26 @@ export function GameContainer({ gameId }: GameContainerProps) {
           currentParticipantId={currentParticipant.id}
         />
       )}
+
+      {/* Proposal Dialog */}
+      <ProposalDialog
+        open={showProposalDialog}
+        onClose={handleCloseProposal}
+        onSubmit={handleMakeProposal}
+        opponents={gameState.participants.filter(p => p.id !== currentParticipant.id).map(p => ({
+          id: p.id,
+          name: p.civilization,
+          civilization: p.civilization,
+          might: p.might,
+          economy: p.economy,
+          isAI: p.isAI,
+          userId: p.userId,
+          remainingProposals: p.remainingProposals
+        }))}
+        currentParticipantId={currentParticipant.id}
+        initialRecipients={proposalRecipients}
+        remainingProposals={currentParticipant.remainingProposals}
+      />
     </div>
   );
 }
