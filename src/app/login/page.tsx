@@ -1,7 +1,7 @@
 "use client";
 
 import { signIn } from "next-auth/react";
-import { FaDiscord, FaGoogle } from "react-icons/fa";
+import { FaDiscord } from "react-icons/fa";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { Button } from "@/components/ui/button";
@@ -25,18 +25,6 @@ function LoginContent() {
       </div>
 
       <div className="space-y-4">
-        <Button
-          onClick={() => signIn("google", { callbackUrl })}
-          variant="outline"
-          className="relative w-full h-12 border-[#1E3A8A]/30 bg-[#1E3A8A]/10 hover:bg-[#1E3A8A]/20 text-[#60A5FA] group"
-        >
-          <div className="absolute inset-0 bg-gradient-to-r from-[#1E3A8A]/0 via-[#1E3A8A]/5 to-[#1E3A8A]/0 opacity-0 group-hover:opacity-100 transition-opacity" />
-          <div className="flex items-center justify-center gap-3">
-            <FaGoogle className="h-5 w-5" />
-            <span>Access via Google Protocol</span>
-          </div>
-        </Button>
-
         <Button
           onClick={() => signIn("discord", { callbackUrl })}
           variant="outline"
