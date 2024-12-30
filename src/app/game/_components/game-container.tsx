@@ -10,6 +10,7 @@ import { PhaseAnnouncement } from "./phase-announcement";
 import { StatusPanel } from "./status-panel";
 import { DiscussionDialog } from "./discussion-dialog";
 import { ProposalDialog } from "./proposal-dialog";
+import { GameCompletionModal } from "./game-completion-modal";
 
 interface GameContainerProps {
   gameId: string;
@@ -40,6 +41,7 @@ interface GameStateParticipant extends Participant {
     publicForId: string | null;
     privateForId: string | null;
   } | null;
+  hasAcknowledgedCompletion: boolean;
 }
 
 interface GameStateDiscussion {
@@ -58,6 +60,7 @@ export function GameContainer({ gameId }: GameContainerProps) {
   const [currentDiscussion, setCurrentDiscussion] = useState<Discussion | null>(null);
   const [showProposalDialog, setShowProposalDialog] = useState(false);
   const [proposalRecipients, setProposalRecipients] = useState<string[]>([]);
+  const [showCompletionModal, setShowCompletionModal] = useState(false);
 
   // Get current participant first
   const { data: participant } = api.game.orchestrator.getCurrentParticipant.useQuery(
@@ -119,6 +122,11 @@ export function GameContainer({ gameId }: GameContainerProps) {
     onSuccess: () => void refetchGameState(),
   });
 
+  // Add acknowledgement mutation
+  const acknowledgeCompletionMutation = api.game.orchestrator.acknowledgeCompletion.useMutation({
+    onSuccess: () => void refetchGameState(),
+  });
+
   // Effects
   useEffect(() => {
     if (gameState?.phase && gameState.phase !== lastPhase) {
@@ -144,6 +152,13 @@ export function GameContainer({ gameId }: GameContainerProps) {
       }
     }
   }, [gameState, currentDiscussion]);
+
+  // Effect to show completion modal when game ends
+  useEffect(() => {
+    if (gameState?.phase === "COMPLETED" && !showCompletionModal) {
+      setShowCompletionModal(true);
+    }
+  }, [gameState?.phase, showCompletionModal]);
 
   if (!gameState || !participant) {
     return <div className="flex min-h-screen items-center justify-center text-white">
@@ -253,6 +268,15 @@ export function GameContainer({ gameId }: GameContainerProps) {
     setProposalRecipients([]);
   };
 
+  const handleAcknowledgeCompletion = async () => {
+    if (!currentParticipant) return;
+    await acknowledgeCompletionMutation.mutateAsync({
+      gameId,
+      participantId: currentParticipant.id,
+    });
+    setShowCompletionModal(false);
+  };
+
   return (
     <div className="container mx-auto min-h-screen p-6">
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -320,7 +344,7 @@ export function GameContainer({ gameId }: GameContainerProps) {
       </div>
 
       {/* Game Log */}
-      <div className="mt-6">
+      <div className="mt-6" id="game-log">
         <GameLog 
           gameId={gameId}
           initialEntries={gameState.logEntries} 
@@ -373,6 +397,16 @@ export function GameContainer({ gameId }: GameContainerProps) {
         initialRecipients={proposalRecipients}
         remainingProposals={currentParticipant.remainingProposals}
       />
+
+      {/* Game Completion Modal */}
+      {gameState.phase === "COMPLETED" && !currentParticipant.hasAcknowledgedCompletion && (
+        <GameCompletionModal
+          open={showCompletionModal}
+          onClose={handleAcknowledgeCompletion}
+          gameId={gameId}
+          winner={gameState.participants.find(p => p.id === gameState.winnerId)}
+        />
+      )}
     </div>
   );
 }

@@ -67,6 +67,7 @@ export interface GameState {
   discussions: Discussion[];
   log: LogEntry[];
   remainingProposals: number;
+  winnerId?: string;
 }
 
 export type MakeProposalFunction = (data: {

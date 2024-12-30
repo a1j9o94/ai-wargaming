@@ -76,21 +76,26 @@ model Game {
   logEntries   LogEntry[]
   host         User?             @relation(fields: [hostId], references: [id])
   hostId       String?
+  winner       GameParticipant?  @relation("GameWinner", fields: [winnerId], references: [id])
+  winnerId     String?
+
+  @@index([winnerId])
 }
 
 model GameParticipant {
-  id                 String     @id @default(cuid())
-  game               Game       @relation(fields: [gameId], references: [id])
-  gameId             String
-  user               User?      @relation(fields: [userId], references: [id])
-  userId             String?
-  civilization       String
-  might              Int        @default(80)
-  economy            Int        @default(80)
-  publicObjective    Objective? @relation("PublicObjective")
-  privateObjective   Objective? @relation("PrivateObjective")
-  remainingProposals Int        @default(2)
-  isAI               Boolean    @default(false)
+  id                        String     @id @default(cuid())
+  game                      Game       @relation(fields: [gameId], references: [id])
+  gameId                    String
+  user                      User?      @relation(fields: [userId], references: [id])
+  userId                    String?
+  civilization              String
+  might                     Int        @default(80)
+  economy                   Int        @default(80)
+  publicObjective           Objective? @relation("PublicObjective")
+  privateObjective          Objective? @relation("PrivateObjective")
+  remainingProposals        Int        @default(2)
+  isAI                      Boolean    @default(false)
+  hasAcknowledgedCompletion Boolean    @default(false)
 
   // Proposals and votes
   createdProposals  Proposal[]            @relation("CreatedProposals")
@@ -103,6 +108,9 @@ model GameParticipant {
   // Log entries visible to this participant
   visibleLogEntries LogEntry[]    @relation("LogVisibility")
   ChatMessage       ChatMessage[]
+
+  // Games won
+  wonGames Game[] @relation("GameWinner")
 
   @@unique([gameId, userId])
 }

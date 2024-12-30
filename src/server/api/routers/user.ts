@@ -47,38 +47,28 @@ export const userRouter = createTRPCRouter({
           participants: {
             some: {
               userId: ctx.session.user.id,
-              AND: {
-                game: {
-                  NOT: {
-                    phase: "COMPLETED"
-                  }
-                }
-              }
-            }
-          }
+            },
+          },
+          phase: {
+            not: "COMPLETED",
+          },
         },
         include: {
           participants: {
             include: {
-              user: {
-                select: {
-                  id: true,
-                  name: true,
-                  image: true,
-                }
-              }
-            }
+              user: true,
+            },
           },
           _count: {
             select: {
               proposals: true,
               discussions: true,
-            }
-          }
+            },
+          },
         },
         orderBy: {
-          updatedAt: 'desc'
-        }
+          updatedAt: 'desc',
+        },
       });
     }),
 });
