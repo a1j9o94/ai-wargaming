@@ -23,15 +23,13 @@ export function DiscussionDialog({
   currentParticipantId
 }: DiscussionDialogProps) {
   const [message, setMessage] = useState("");
-  const [selectedParticipants, setSelectedParticipants] = useState<string[]>(opponents.map(o => o.id));
+  const [selectedParticipants, setSelectedParticipants] = useState<string[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const sendMessage = api.game.sendMessage.useMutation();
 
-  // Update selectedParticipants when opponents change
-  useEffect(() => {
-    setSelectedParticipants(opponents.map(o => o.id));
-  }, [opponents]);
+  // Filter out current player from opponents list
+  const filteredOpponents = opponents.filter(opponent => opponent.id !== currentParticipantId);
 
   // Get game ID from URL safely
   const gameId = typeof window !== 'undefined' ? 
@@ -41,7 +39,7 @@ export function DiscussionDialog({
   const { data: discussion, isLoading, refetch } = api.game.getDiscussion.useQuery(
     { 
       gameId,
-      participantIds: [currentParticipantId, ...selectedParticipants]
+      participantIds: [currentParticipantId, ...selectedParticipants].sort()
     },
     { 
       enabled: selectedParticipants.length >= 1 && gameId !== '',
@@ -51,7 +49,10 @@ export function DiscussionDialog({
 
   // Update messages when discussion changes
   useEffect(() => {
-    if (discussion?.messages) {
+    if (!discussion || selectedParticipants.length === 0) {
+      // Clear messages if no exact discussion exists or no participants selected
+      setMessages([]);
+    } else if (discussion.messages) {
       const newMessages: ChatMessage[] = discussion.messages.map(m => ({
         id: m.id,
         senderId: m.senderId,
@@ -60,7 +61,7 @@ export function DiscussionDialog({
       }));
       setMessages(newMessages);
     }
-  }, [discussion]);
+  }, [discussion, selectedParticipants]);
 
   // Subscribe to new messages
   api.game.onNewMessage.useSubscription(
@@ -74,13 +75,28 @@ export function DiscussionDialog({
         }
         
         const chatMessage = data as ChatMessage;
-        if (chatMessage.id && chatMessage.senderId && chatMessage.content && chatMessage.timestamp) {
+        if (
+          discussion?.id && // Ensure we have a current discussion
+          chatMessage.id &&
+          chatMessage.senderId &&
+          chatMessage.content &&
+          chatMessage.timestamp
+        ) {
           setMessages(prev => [...prev, chatMessage]);
         }
       },
       enabled: Boolean(open && discussion?.id),
     }
   );
+
+  // Debug logging
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Selected participants:', [currentParticipantId, ...selectedParticipants].sort());
+      console.log('Current discussion:', discussion);
+      console.log('Messages:', messages);
+    }
+  }, [selectedParticipants, discussion, messages, currentParticipantId]);
 
   // Scroll to bottom when new messages arrive
   useEffect(() => {
@@ -90,7 +106,6 @@ export function DiscussionDialog({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (message.trim() && discussion?.id) {
-      console.log("Sending message:", message);
       await sendMessage.mutateAsync({
         discussionId: discussion.id,
         content: message,
@@ -106,6 +121,8 @@ export function DiscussionDialog({
         ? prev.filter(id => id !== opponentId)
         : [...prev, opponentId]
     );
+    // Clear current messages immediately while waiting for new data
+    setMessages([]);
     // Force a re-fetch for immediate data
     setTimeout(() => void refetch(), 0);
   };
@@ -122,7 +139,7 @@ export function DiscussionDialog({
         <div className="flex justify-between items-start mb-4">
           <div>
             <div className="flex flex-wrap gap-2">
-              {opponents.map(opponent => (
+              {filteredOpponents.map(opponent => (
                 <Button
                   key={opponent.id}
                   variant={selectedParticipants.includes(opponent.id) ? 'default' : 'outline'}
@@ -152,8 +169,12 @@ export function DiscussionDialog({
           key={discussion?.id ?? 'no-discussion'}
           className="flex-1 overflow-y-auto mb-4 space-y-4 bg-[#1E3A8A]/5 p-4 rounded-lg"
         >
-          {isLoading ? (
+          {selectedParticipants.length === 0 ? (
+            <div className="text-center text-gray-400">Select participants to start a discussion</div>
+          ) : isLoading ? (
             <div className="text-center text-gray-400">Loading messages...</div>
+          ) : messages.length === 0 ? (
+            <div className="text-center text-gray-400">No messages yet. Start the conversation!</div>
           ) : messages.map((msg) => {
             const sender = msg.senderId === currentParticipantId
               ? { name: "You" }
@@ -181,10 +202,12 @@ export function DiscussionDialog({
             onChange={(e) => setMessage(e.target.value)}
             placeholder="Type your message..."
             className="flex-1 bg-[#1E3A8A]/10 border-[#1E3A8A]/30 text-white placeholder:text-gray-400 focus:border-[#60A5FA]"
+            disabled={selectedParticipants.length === 0}
           />
           <Button 
             type="submit"
             className="bg-[#1E3A8A] hover:bg-[#2B4C9F] text-[rgb(243,244,246)]"
+            disabled={selectedParticipants.length === 0}
           >
             Send
           </Button>
