@@ -24,6 +24,12 @@ const updateDiscussionInput = z.object({
   gameId: z.string(),
 });
 
+// Input type for getting a discussion
+const getDiscussionInput = z.object({
+  gameId: z.string(),
+  participantIds: z.array(z.string()),
+});
+
 // Helper function to trigger AI responses to a message
 async function triggerAIResponses(
   db: PrismaClient,
@@ -139,6 +145,54 @@ export async function updateDiscussion(
   return discussion;
 }
 
+//core discussion retrieval logic
+export async function getDiscussion(
+  db: PrismaClient,
+  input: z.infer<typeof getDiscussionInput>
+) {
+  // Find discussion where ALL participants match exactly (no more, no less)
+  const discussion = await db.discussion.findFirst({
+    where: { 
+      gameId: input.gameId,
+      AND: [
+        // Must have all the requested participants
+        ...input.participantIds.map(id => ({
+          participants: { some: { id } }
+        })),
+        // Must not have any other participants
+        {
+          participants: {
+            every: {
+              id: { in: input.participantIds }
+            }
+          }
+        }
+      ]
+    },
+    include: {
+      messages: true,
+      participants: true,
+    },
+  });
+
+  if (!discussion) {
+    const newDiscussion = await db.discussion.create({
+      data: { 
+        gameId: input.gameId, 
+        participants: { 
+          connect: input.participantIds.map(id => ({ id })) 
+        } 
+      },
+      include: {
+        messages: true,
+        participants: true,
+      },
+    });
+    return newDiscussion;
+  }
+  return discussion;
+}
+
 export const discussionRouter = createTRPCRouter({
   // Send a message in a discussion
   sendMessage: protectedProcedure
@@ -158,47 +212,7 @@ export const discussionRouter = createTRPCRouter({
   getDiscussion: protectedProcedure
     .input(z.object({ gameId: z.string(), participantIds: z.array(z.string()) }))
     .query(async ({ ctx, input }) => {
-      // Find discussion where ALL participants match exactly (no more, no less)
-      const discussion = await ctx.db.discussion.findFirst({
-        where: { 
-          gameId: input.gameId,
-          AND: [
-            // Must have all the requested participants
-            ...input.participantIds.map(id => ({
-              participants: { some: { id } }
-            })),
-            // Must not have any other participants
-            {
-              participants: {
-                every: {
-                  id: { in: input.participantIds }
-                }
-              }
-            }
-          ]
-        },
-        include: {
-          messages: true,
-          participants: true,
-        },
-      });
-
-      if (!discussion) {
-        const newDiscussion = await ctx.db.discussion.create({
-          data: { 
-            gameId: input.gameId, 
-            participants: { 
-              connect: input.participantIds.map(id => ({ id })) 
-            } 
-          },
-          include: {
-            messages: true,
-            participants: true,
-          },
-        });
-        return newDiscussion;
-      }
-      return discussion;
+      return getDiscussion(ctx.db, input);
     }),
 
   // Subscribe to new messages

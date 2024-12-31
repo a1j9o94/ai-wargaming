@@ -1,12 +1,57 @@
-import type { PrismaClient } from "@prisma/client";
+import type { Proposal, ProposalParticipant, GameParticipant } from "@prisma/client";
+import { type PrismaClient } from "@prisma/client";
 import { GamePhase } from "~/types/game";
+import { ProposalRole } from "~/types/game-constants";
 import { createProposal } from "~/server/api/routers/proposal";
-import { createMessage } from "~/server/api/routers/discussion";
+import { createMessage, getDiscussion } from "~/server/api/routers/discussion";
 import { createVote } from "~/server/api/routers/proposal";
 import { getGameContext } from "~/server/api/routers/orchestration-router";
-import { readFileSync } from "fs";
 import OpenAI from "openai";
-import path from "path";
+import { messageResponsePrompt, proposalGenerationPrompt, votingPrompt } from "./ai-prompts";
+import { z } from "zod";
+import { zodResponseFormat } from "openai/helpers/zod";
+import { api } from "~/trpc/server";
+
+const ProposalOutputSchema = z.object({
+  proposals: z.array(z.object({
+    type: z.enum(["TRADE", "MILITARY", "ALLIANCE"]),
+    participants: z.array(z.string()),
+    targets: z.array(z.string()),
+    isPublic: z.boolean(),
+    reasoning: z.string()
+  }))
+});
+
+const VotingOutputSchema = z.object({
+  votes: z.array(z.object({
+    proposalId: z.string(),
+    support: z.boolean(),
+    reasoning: z.string()
+  }))
+});
+
+type ProposalForAI = Pick<Proposal, 'id' | 'type' | 'description' | 'isPublic'> & {
+  creator: string;
+  participants: string[];
+  targets: string[];
+};
+
+type ProposalWithRelations = Proposal & {
+  creator: {
+    civilization: string;
+  };
+  participants: (ProposalParticipant & {
+    participant: {
+      civilization: string;
+      id: string;
+    };
+  })[];
+  targets: (ProposalParticipant & {
+    participant: {
+      civilization: string;
+    };
+  })[];
+};
 
 export async function handleAIPhaseActions(
   db: PrismaClient,
@@ -44,8 +89,17 @@ async function handleProposalPhase(
   gameId: string,
   aiParticipant: { id: string; civilization: string }
 ) {
-  // Random chance to make a proposal
-  if (Math.random() > 0.5) {
+  try {
+    // Get full AI participant data
+    const fullAiParticipant = await db.gameParticipant.findUnique({
+      where: { id: aiParticipant.id },
+    });
+
+    if (!fullAiParticipant) {
+      throw new Error('AI participant not found');
+    }
+
+    // Get other participants
     const otherParticipants = await db.gameParticipant.findMany({
       where: {
         gameId,
@@ -53,126 +107,76 @@ async function handleProposalPhase(
       },
     });
 
-    // Determine proposal type with equal chance for each type
-    const proposalType = Math.random() < 0.33 ? "TRADE" : 
-                        Math.random() < 0.66 ? "MILITARY" : 
-                        "ALLIANCE";
-    
-    if (proposalType === "MILITARY") {
-      // Military proposal logic remains the same
-      const shuffledParticipants = otherParticipants
-        .sort(() => Math.random() - 0.5);
-      
-      const targets = [shuffledParticipants[0]!.id];
-      shuffledParticipants.slice(1).forEach(p => {
-        if (Math.random() > 0.7) targets.push(p.id);
-      });
+    // Get game context
+    const game = await getGameContext(db, gameId, aiParticipant.id);
 
-      const recipients = shuffledParticipants
-        .filter(p => !targets.includes(p.id))
-        .filter(() => Math.random() > 0.5)
-        .map(p => p.id);
+    if (!game) {
+      throw new Error('Game not found');
+    }
 
-      if (recipients.length === 0) {
-        return;
-      }
+    // Get AI's objectives
+    const objectives = await db.objective.findMany({
+      where: {
+        OR: [
+          { publicForId: aiParticipant.id },
+          { privateForId: aiParticipant.id }
+        ],
+      },
+    });
 
-      // Get recipient civilizations
-      const recipientParticipants = await db.gameParticipant.findMany({
+    // Generate the prompt and function schema
+    const prompt = proposalGenerationPrompt(objectives, game, fullAiParticipant, otherParticipants);
+
+    // Call OpenAI API
+    const openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+
+    const response = await openai.beta.chat.completions.parse({
+      model: "gpt-4o",
+      messages: [{ role: "user", content: prompt }],
+      response_format: zodResponseFormat(ProposalOutputSchema, "proposals"),
+    });
+
+    const proposals = response.choices[0]?.message?.parsed;
+
+    if (!proposals) {
+      console.log('No proposals generated');
+      return;
+    }
+
+    // Create each proposal
+    for (const proposal of proposals.proposals) {
+      // Get participant IDs from civilization names
+      const participantIds = await db.gameParticipant.findMany({
         where: {
-          id: { in: recipients }
+          gameId,
+          civilization: { in: proposal.participants },
         },
-        select: {
-          civilization: true
-        }
+        select: { id: true },
       });
 
-      // Get target civilizations
-      const targetParticipants = await db.gameParticipant.findMany({
+      const targetIds = proposal.type === "MILITARY" ? await db.gameParticipant.findMany({
         where: {
-          id: { in: targets }
+          gameId,
+          civilization: { in: proposal.targets },
         },
-        select: {
-          civilization: true
-        }
-      });
+        select: { id: true },
+      }) : [];
 
-      const recipientNames = recipientParticipants.map(p => p.civilization).join(", ");
-      const targetNames = targetParticipants.map(p => p.civilization).join(", ");
-      const proposalDescription = `${aiParticipant.civilization} proposes a military arrangement with ${recipientNames} against ${targetNames}`;
-
-      return createProposal(db, {
+      await createProposal(db, {
         gameId,
         senderId: aiParticipant.id,
-        participants: recipients,
-        targets: targets,
-        type: proposalType,
-        description: proposalDescription,
-        isPublic: Math.random() > 0.7,
-      });
-    } else if (proposalType === "ALLIANCE") {
-      // For alliance proposals, select 1-3 participants randomly
-      const shuffledParticipants = otherParticipants
-        .sort(() => Math.random() - 0.5)
-        .slice(0, Math.floor(Math.random() * 3) + 1);
-      
-      const recipients = shuffledParticipants.map(p => p.id);
-      
-      // Get recipient civilizations
-      const recipientParticipants = await db.gameParticipant.findMany({
-        where: {
-          id: { in: recipients }
-        },
-        select: {
-          civilization: true
-        }
-      });
-
-      const recipientNames = recipientParticipants.map(p => p.civilization).join(", ");
-      const proposalDescription = `${aiParticipant.civilization} proposes forming an alliance with ${recipientNames}`;
-
-      return createProposal(db, {
-        gameId,
-        senderId: aiParticipant.id,
-        participants: recipients,
-        targets: [],
-        type: proposalType,
-        description: proposalDescription,
-        isPublic: Math.random() > 0.7,
-      });
-    } else {
-      // Handle TRADE proposals (logic remains the same)
-      const recipients = otherParticipants
-        .filter(() => Math.random() > 0.5)
-        .map(p => p.id);
-      
-      if (recipients.length === 0) {
-        return;
-      }
-
-      // Get recipient civilizations
-      const recipientParticipants = await db.gameParticipant.findMany({
-        where: {
-          id: { in: recipients }
-        },
-        select: {
-          civilization: true
-        }
-      });
-
-      const recipientNames = recipientParticipants.map(p => p.civilization).join(", ");
-      const proposalDescription = `${aiParticipant.civilization} proposes a trade arrangement with ${recipientNames}`;
-
-      return createProposal(db, {
-        gameId,
-        senderId: aiParticipant.id,
-        participants: recipients,
-        targets: [],
-        type: proposalType,
-        description: proposalDescription,
-        isPublic: Math.random() > 0.7,
+        participants: participantIds.map(p => p.id),
+        targets: targetIds.map(t => t.id),
+        type: proposal.type,
+        description: `${aiParticipant.civilization} ${proposal.reasoning}`,
+        isPublic: proposal.isPublic,
       });
     }
+  } catch (error) {
+    console.error('Error in handleProposalPhase:', error);
+    throw error;
   }
 }
 
@@ -181,30 +185,163 @@ async function handleVotingPhase(
   gameId: string,
   aiParticipant: { id: string; civilization: string }
 ) {
-  // Vote on all pending proposals
-  const pendingProposals = await db.proposal.findMany({
-    where: {
-      gameId,
-      status: "PENDING",
-      // Don't vote on own proposals
-      creatorId: { not: aiParticipant.id },
-      // Haven't voted yet
-      votes: {
-        none: {
-          participantId: aiParticipant.id
+  try {
+    // Get full AI participant data
+    const fullAiParticipant = await db.gameParticipant.findUnique({
+      where: { id: aiParticipant.id },
+    });
+
+    if (!fullAiParticipant) {
+      throw new Error('AI participant not found');
+    }
+
+    // Get pending proposals where the AI is a participant or creator and hasn't voted yet
+    const pendingProposals = await db.proposal.findMany({
+      where: {
+        gameId,
+        status: "PENDING",
+        participants: {
+          some: {
+            participantId: aiParticipant.id,
+            role: {
+              in: [ProposalRole.CREATOR, ProposalRole.PARTICIPANT]
+            }
+          }
+        },
+        votes: {
+          none: {
+            participantId: aiParticipant.id
+          }
+        }
+      },
+      include: {
+        creator: {
+          select: {
+            civilization: true
+          }
+        },
+        participants: {
+          include: {
+            participant: {
+              select: {
+                civilization: true,
+                id: true
+              }
+            }
+          }
+        },
+        targets: {
+          include: {
+            participant: {
+              select: {
+                civilization: true
+              }
+            }
+          }
         }
       }
-    },
-  });
+    }) as ProposalWithRelations[];
 
-  console.log(`[AI-${aiParticipant.id}] Voting on ${pendingProposals.length} proposals`);
-  
-  for (const proposal of pendingProposals) {
-    await createVote(db, {
-      proposalId: proposal.id,
-      participantId: aiParticipant.id,
-      support: true,
+    if (pendingProposals.length === 0) {
+      return;
+    }
+
+    console.log(`[AI-${aiParticipant.id}] Voting on ${pendingProposals.length} proposals`);
+
+    // Get game context
+    const game = await getGameContext(db, gameId, aiParticipant.id);
+
+    if (!game) {
+      throw new Error('Game not found');
+    }
+
+    // Get AI's objectives
+    const objectives = await db.objective.findMany({
+      where: {
+        OR: [
+          { publicForId: aiParticipant.id },
+          { privateForId: aiParticipant.id }
+        ],
+      },
     });
+
+    // Format proposals for the prompt
+    const proposalsForAI: ProposalForAI[] = pendingProposals.map(p => ({
+      id: p.id,
+      type: p.type,
+      description: p.description,
+      creator: p.creator.civilization,
+      isPublic: p.isPublic,
+      participants: p.participants.map(part => part.participant.civilization),
+      targets: p.targets.map(target => target.participant.civilization)
+    }));
+
+    // Generate the prompt
+    const prompt = votingPrompt(objectives, game, fullAiParticipant, proposalsForAI);
+
+    // Call OpenAI API
+    const openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+
+    const response = await openai.beta.chat.completions.parse({
+      model: "gpt-4o",
+      messages: [{ role: "user", content: prompt }],
+      response_format: zodResponseFormat(VotingOutputSchema, "votes"),
+    });
+
+    const votes = response.choices[0]?.message?.parsed;
+
+    if (!votes) {
+      console.log('No votes generated');
+      return;
+    }
+
+    // Create each vote
+    for (const vote of votes.votes) {
+      console.log(`[AI-${aiParticipant.id}] Processing vote:`, {
+        proposalId: vote.proposalId,
+        support: vote.support,
+        reasoning: vote.reasoning
+      });
+
+      // Validate that the proposal exists in our pending proposals
+      const proposal = pendingProposals.find(p => p.id === vote.proposalId);
+      if (!proposal) {
+        console.error(`[AI-${aiParticipant.id}] Proposal ${vote.proposalId} not found in pending proposals:`, {
+          availableProposals: pendingProposals.map(p => p.id)
+        });
+        continue; // Skip this vote and continue with others
+      }
+
+      await createVote(db, {
+        proposalId: vote.proposalId,
+        participantId: aiParticipant.id,
+        support: vote.support,
+      });
+
+      // Get participant IDs for the discussion
+      const participantIds = proposal.participants.map(p => p.participant.id);
+
+      // Get the discussion with the proposal participants
+      const discussion = await getDiscussion(db, {
+        gameId: gameId,
+        participantIds: participantIds
+      });
+
+      console.log(`[AI-${aiParticipant.id}] Voting on proposal ${proposal.id} with discussion ${discussion?.id} and reasoning: ${vote.reasoning}`);
+
+      if (discussion) {
+        await createMessage(db, {
+          discussionId: discussion.id,
+          senderId: aiParticipant.id,
+          content: vote.reasoning,
+        });
+      }
+    }
+  } catch (error) {
+    console.error('Error in handleVotingPhase:', error);
+    throw error;
   }
 }
 
@@ -236,6 +373,10 @@ async function determineResponse(
     // gather game state
     const game = await getGameContext(db, gameId, aiParticipantId);
 
+    if (!game) {
+        throw new Error('Game not found');
+    }
+
     //get the players objectives
     const objectives = await db.objective.findMany({
         where: {
@@ -243,27 +384,8 @@ async function determineResponse(
         },
     });
 
-    const proposal_outcomes = readFileSync(path.join(process.cwd(), 'src/types/proposal-outcomes.md'), 'utf8');
-
     //write prompt for the AI to respond to the message with the game state for context
-    const prompt = `
-    You are playing a game where you represent a galactic civilization. Over the course of several rounds you have the opportunity to make proposals, vote on proposals, and engage in discussions with other players.
-    It's important to remember that other players may lie or mislead you for their own benefit, you should be skeptical of their statements and make your own decisions based on the information you have. It is ok, and expected, that you can lie about your own actions and intentions.
-    Your objectives are ${objectives.map(o => o.description).join(", ")}.
-    Proposals can have the following outcomes:
-     ${proposal_outcomes}
-
-    You have the following context for the game:
-    ${JSON.stringify(game)}
-
-    You are responding to a discussion with the following participants:
-    ${discussion.participants.map(p => p.id).join(", ")}
-
-    The conversation so far is:
-    ${discussion.messages.map(m => `${m.senderId}: ${m.content}`).join("\n")}
-
-    Use <thinking></thinking> tags to indicate your thoughts and <response></response> tags to indicate your response.
-    `;
+    const prompt = messageResponsePrompt(objectives, game, discussion.participants, discussion.messages);
 
     const openai = new OpenAI({
         apiKey: process.env.OPENAI_API_KEY,

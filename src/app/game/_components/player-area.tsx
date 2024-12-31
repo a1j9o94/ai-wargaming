@@ -34,7 +34,6 @@ export function PlayerArea({
   onOpenProposal,
 }: PlayerAreaProps) {
   const [pendingMessages, setPendingMessages] = useState<string[]>([]);
-  const [votedProposals, setVotedProposals] = useState<Set<string>>(new Set());
 
   // Fetch objectives for the current participant
   const { data: objectives } = api.objectives.getParticipantObjectives.useQuery(
@@ -75,7 +74,6 @@ export function PlayerArea({
 
   const handleVote = async (proposalId: string, support: boolean) => {
     await onVote(proposalId, support);
-    setVotedProposals(prev => new Set([...prev, proposalId]));
   };
 
   const renderPhaseContent = () => {
@@ -100,11 +98,12 @@ export function PlayerArea({
       case "VOTING":
         const unvotedProposals = proposals.filter(
           (proposal) => {
-            // Check if we haven't voted yet
-            if (votedProposals.has(proposal.id)) return false;
+            // Check if we haven't voted yet - look for existing votes in the proposal data
+            const hasVoted = proposal.votes?.some(vote => vote.participantId === currentParticipantId);
+            if (hasVoted) return false;
             
             // Check if we're a target (targets can't vote)
-            const isTarget = proposal.participants.some((p: { participantId: string; role: string }) => 
+            const isTarget = proposal.participants.some((p) => 
               p.participantId === currentParticipantId && 
               p.role === "TARGET"
             );

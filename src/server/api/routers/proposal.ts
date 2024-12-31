@@ -139,11 +139,13 @@ export async function createProposal(
             participant: { connect: { id: sender.id } },
             role: ProposalRole.CREATOR,
           },
-          // Add other participants
-          ...input.participants.map(participantId => ({
-            participant: { connect: { id: participantId } },
-            role: ProposalRole.PARTICIPANT,
-          })),
+          // Add other participants (excluding creator)
+          ...input.participants
+            .filter(participantId => participantId !== sender.id)
+            .map(participantId => ({
+              participant: { connect: { id: participantId } },
+              role: ProposalRole.PARTICIPANT,
+            })),
         ],
       },
     },
@@ -220,27 +222,14 @@ export async function createVote(
     support: input.support
   });
 
-  const participant = await db.gameParticipant.findFirst({
-    where: {
-      game: {
-        proposals: {
-          some: { id: input.proposalId },
-        },
-      },
-      id: input.participantId,
-    },
-  });
-
-  if (!participant) throw new Error("Not a participant in this game");
-
+  // First get the proposal with its participants
   const proposal = await db.proposal.findUnique({
     where: { id: input.proposalId },
     include: {
       game: true,
       creator: true,
       participants: {
-        select: {
-          role: true,
+        include: {
           participant: {
             select: {
               id: true,
@@ -257,14 +246,14 @@ export async function createVote(
 
   // Check if the participant is a target
   const isTarget = proposal.participants.some(p => 
-    p.participant.id === participant.id && p.role === ProposalRole.TARGET
+    p.participant.id === input.participantId && p.role === ProposalRole.TARGET
   );
 
   if (isTarget) throw new Error("Targets cannot vote on proposals");
 
   // Check if the participant is allowed to vote (must be creator or participant)
   const isAllowedToVote = proposal.participants.some(p => 
-    p.participant.id === participant.id && 
+    p.participant.id === input.participantId && 
     (p.role === ProposalRole.CREATOR || p.role === ProposalRole.PARTICIPANT)
   );
 
@@ -273,38 +262,21 @@ export async function createVote(
   const vote = await db.vote.create({
     data: {
       proposal: { connect: { id: input.proposalId } },
-      participant: { connect: { id: participant.id } },
+      participant: { connect: { id: input.participantId } },
       support: input.support,
     },
   });
 
-  // Create log entry - public votes are visible to everyone, private ones only to proposal participants
+  // Get the voter's civilization for the log
   const voter = await db.gameParticipant.findUnique({
-    where: { id: participant.id },
-    select: { civilization: true }
-  });
-
-  const proposalCreator = await db.gameParticipant.findUnique({
-    where: { id: proposal.creatorId },
+    where: { id: input.participantId },
     select: { civilization: true }
   });
 
   // Get targets if they exist
-  const targets = await db.proposalParticipant.findMany({
-    where: {
-      proposalId: proposal.id,
-      role: ProposalRole.TARGET
-    },
-    include: {
-      participant: {
-        select: {
-          civilization: true
-        }
-      }
-    }
-  });
+  const targets = proposal.participants.filter(p => p.role === ProposalRole.TARGET);
 
-  let logMessage = `${voter?.civilization} voted ${input.support ? 'in favor of' : 'against'} ${proposalCreator?.civilization}'s ${proposal.type} proposal`;
+  let logMessage = `${voter?.civilization} voted ${input.support ? 'in favor of' : 'against'} ${proposal.creator.civilization}'s ${proposal.type} proposal`;
   
   if (targets.length > 0 && proposal.type === "MILITARY") {
     const targetNames = targets.map(t => t.participant.civilization).join(", ");

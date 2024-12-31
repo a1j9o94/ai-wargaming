@@ -1,5 +1,5 @@
-export const PROPOSALS_PER_ROUND = 2;
-export const NUMBER_OF_ROUNDS = 5;
+export const PROPOSALS_PER_ROUND = 3;
+export const NUMBER_OF_ROUNDS = 2;
 
 export const ProposalRole = {
   CREATOR: "CREATOR",
