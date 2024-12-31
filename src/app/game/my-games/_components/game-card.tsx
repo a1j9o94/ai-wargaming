@@ -67,8 +67,8 @@ export function GameCard({ game: initialGame }: { game: GameWithRelations }) {
             <form action={handleMarkAsCompleted}>
               <Button
                 type="submit"
-                variant="destructive"
-                className="w-full"
+                variant="outline"
+                className="w-full bg-white text-black hover:bg-white/90"
                 disabled={isPending}
               >
                 {isPending ? "Marking as Completed..." : "Mark as Completed"}
