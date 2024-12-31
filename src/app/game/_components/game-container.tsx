@@ -311,7 +311,8 @@ export function GameContainer({ gameId }: GameContainerProps) {
               economy: p.economy,
               isAI: p.isAI,
               userId: p.userId,
-              remainingProposals: p.remainingProposals
+              remainingProposals: p.remainingProposals,
+              tradeDealsAccepted: p.tradeDealsAccepted
             }))}
             proposals={gameState.proposals.map(p => ({
               id: p.id,
@@ -323,8 +324,12 @@ export function GameContainer({ gameId }: GameContainerProps) {
               recipients: p.participants.map(part => part.participantId),
               status: p.status as "PENDING" | "ACCEPTED" | "REJECTED",
               votes: p.votes.map(v => ({
-                opponentId: v.participantId,
+                participantId: v.participantId,
                 support: v.support,
+              })),
+              participants: p.participants.map(part => ({
+                participantId: part.participantId,
+                role: part.role as "CREATOR" | "PARTICIPANT" | "TARGET"
               })),
             }))}
           />
@@ -341,7 +346,8 @@ export function GameContainer({ gameId }: GameContainerProps) {
               economy: p.economy,
               isAI: p.isAI,
               userId: p.userId,
-              remainingProposals: p.remainingProposals
+              remainingProposals: p.remainingProposals,
+              tradeDealsAccepted: p.tradeDealsAccepted
             }))}
             gameId={gameId}
             currentParticipantId={currentParticipant.id}
@@ -380,7 +386,8 @@ export function GameContainer({ gameId }: GameContainerProps) {
             economy: p.economy,
             isAI: p.isAI,
             userId: p.userId,
-            remainingProposals: p.remainingProposals
+            remainingProposals: p.remainingProposals,
+            tradeDealsAccepted: p.tradeDealsAccepted,
           }))}
           currentParticipantId={currentParticipant.id}
         />
@@ -399,7 +406,8 @@ export function GameContainer({ gameId }: GameContainerProps) {
           economy: p.economy,
           isAI: p.isAI,
           userId: p.userId,
-          remainingProposals: p.remainingProposals
+          remainingProposals: p.remainingProposals,
+          tradeDealsAccepted: p.tradeDealsAccepted,
         }))}
         currentParticipantId={currentParticipant.id}
         initialParticipants={proposalRecipients}

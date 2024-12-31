@@ -65,19 +65,20 @@ model VerificationToken {
 
 // Game Models
 model Game {
-  id           String            @id @default(cuid())
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
-  currentRound Int               @default(1)
-  phase        String // SETUP, PROPOSAL, DISCUSSION, VOTING, RESOLVE, COMPLETED
-  participants GameParticipant[]
-  proposals    Proposal[]
-  discussions  Discussion[]
-  logEntries   LogEntry[]
-  host         User?             @relation(fields: [hostId], references: [id])
-  hostId       String?
-  winner       GameParticipant?  @relation("GameWinner", fields: [winnerId], references: [id])
-  winnerId     String?
+  id             String            @id @default(cuid())
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  currentRound   Int               @default(1)
+  phase          String // SETUP, PROPOSAL, DISCUSSION, VOTING, RESOLVE, COMPLETED
+  participants   GameParticipant[]
+  proposals      Proposal[]
+  discussions    Discussion[]
+  logEntries     LogEntry[]
+  host           User?             @relation(fields: [hostId], references: [id])
+  hostId         String?
+  winner         GameParticipant?  @relation("GameWinner", fields: [winnerId], references: [id])
+  winnerId       String?
+  numberOfRounds Int               @default(10)
 
   @@index([winnerId])
 }

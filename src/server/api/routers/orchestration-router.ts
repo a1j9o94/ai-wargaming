@@ -4,7 +4,7 @@ import {
   protectedProcedure,
 } from "~/server/api/trpc";
 import { GamePhase } from "~/types/game";
-import { PROPOSALS_PER_ROUND } from "~/types/game-constants";
+import { NUMBER_OF_ROUNDS, PROPOSALS_PER_ROUND } from "~/types/game-constants";
 import { assignObjectives } from "~/server/game/objective-manager";
 import { updateGameLog } from "~/server/game/logging";
 import { triggerAIActions } from "~/server/ai/ai-orchestrator";
@@ -13,6 +13,7 @@ import { advanceGamePhase } from "~/server/game/state-manager";
 // Input type for creating a new game
 const createGameInput = z.object({
   civilization: z.string(),
+  numberOfRounds: z.number().optional(),
 });
 
 export const orchestrationRouter = createTRPCRouter({
@@ -24,6 +25,7 @@ export const orchestrationRouter = createTRPCRouter({
         data: {
           phase: GamePhase.PROPOSAL,
           currentRound: 1,
+          numberOfRounds: input.numberOfRounds ?? NUMBER_OF_ROUNDS,
           participants: {
             create: [
               {
@@ -162,6 +164,14 @@ export const orchestrationRouter = createTRPCRouter({
       return ctx.db.gameParticipant.update({
         where: { id: input.participantId },
         data: { hasAcknowledgedCompletion: true },
+      });
+    }),
+    markGameAsCompleted: protectedProcedure
+    .input(z.object({ gameId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      return ctx.db.game.update({
+        where: { id: input.gameId },
+        data: { phase: GamePhase.COMPLETED },
       });
     }),
 }); 

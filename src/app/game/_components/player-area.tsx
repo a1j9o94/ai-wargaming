@@ -99,7 +99,24 @@ export function PlayerArea({
 
       case "VOTING":
         const unvotedProposals = proposals.filter(
-          (proposal) => !votedProposals.has(proposal.id)
+          (proposal) => {
+            // Check if we haven't voted yet
+            if (votedProposals.has(proposal.id)) return false;
+            
+            // Check if we're a target (targets can't vote)
+            const isTarget = proposal.participants.some((p: { participantId: string; role: string }) => 
+              p.participantId === currentParticipantId && 
+              p.role === "TARGET"
+            );
+            if (isTarget) return false;
+
+            // Check if we're allowed to vote (must be creator or participant)
+            const isAllowedToVote = proposal.participants.some(p => 
+              p.participantId === currentParticipantId && 
+              (p.role === "CREATOR" || p.role === "PARTICIPANT")
+            );
+            return isAllowedToVote;
+          }
         );
 
         return (

@@ -34,10 +34,13 @@ export interface Proposal {
   description: string;
   type: "TRADE" | "MILITARY" | "ALLIANCE";
   isPublic: boolean;
-  recipients: string[];
   status: "PENDING" | "ACCEPTED" | "REJECTED";
+  participants: Array<{
+    participantId: string;
+    role: "CREATOR" | "PARTICIPANT" | "TARGET";
+  }>;
   votes: Array<{
-    opponentId: string;
+    participantId: string;
     support: boolean;
   }>;
 }

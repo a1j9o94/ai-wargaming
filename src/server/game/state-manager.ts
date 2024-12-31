@@ -24,7 +24,7 @@ export async function advanceGamePhase(
     : GamePhase.COMPLETED;
 
   // Check if this is the final round (e.g., after 10 rounds)
-  const isGameEnd = game.currentRound >= 10 && game.phase === GamePhase.VOTING;
+  const isGameEnd = game.currentRound >= game.numberOfRounds && game.phase === GamePhase.VOTING;
 
   // If entering resolve phase, resolve all proposals first
   if (nextPhase === GamePhase.RESOLVE) {

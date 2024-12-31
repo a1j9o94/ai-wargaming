@@ -240,6 +240,7 @@ export async function createVote(
       creator: true,
       participants: {
         select: {
+          role: true,
           participant: {
             select: {
               id: true,
@@ -253,6 +254,21 @@ export async function createVote(
   });
 
   if (!proposal) throw new Error("Proposal not found");
+
+  // Check if the participant is a target
+  const isTarget = proposal.participants.some(p => 
+    p.participant.id === participant.id && p.role === ProposalRole.TARGET
+  );
+
+  if (isTarget) throw new Error("Targets cannot vote on proposals");
+
+  // Check if the participant is allowed to vote (must be creator or participant)
+  const isAllowedToVote = proposal.participants.some(p => 
+    p.participant.id === participant.id && 
+    (p.role === ProposalRole.CREATOR || p.role === ProposalRole.PARTICIPANT)
+  );
+
+  if (!isAllowedToVote) throw new Error("Not authorized to vote on this proposal");
 
   const vote = await db.vote.create({
     data: {

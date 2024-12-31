@@ -1,81 +1,13 @@
 import { Suspense } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
+import { Card, CardContent, CardHeader } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
-import { api } from "~/trpc/server";
 import Link from "next/link";
-import type { GamePhase } from "~/types/game";
-import type { Game, GameParticipant, User } from "@prisma/client";
-
-type GameWithRelations = Game & {
-  participants: (GameParticipant & {
-    user: User | null;
-  })[];
-  _count: {
-    proposals: number;
-    discussions: number;
-  };
-};
-
-function GameCard({ game }: { game: GameWithRelations }) {
-  const humanPlayers = game.participants.filter((p) => !p.isAI);
-  const currentPhase = game.phase as GamePhase;
-  const isCompleted = currentPhase === "COMPLETED";
-
-  return (
-    <Card className="bg-black/40 hover:bg-black/60 transition-colors border-zinc-800">
-      <Link href={`/game/${game.id}`}>
-        <CardHeader>
-          <CardTitle className="text-lg text-white">
-            Game #{game.id.slice(0, 8)}
-          </CardTitle>
-          <CardDescription className="text-zinc-400">
-            {isCompleted ? (
-              "Completed"
-            ) : (
-              `Round ${game.currentRound} • ${currentPhase.charAt(0) + currentPhase.slice(1).toLowerCase()} Phase`
-            )}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2">
-            <div className="text-sm text-zinc-400">
-              {humanPlayers.length} Human Player{humanPlayers.length !== 1 ? "s" : ""}
-            </div>
-            <div className="flex gap-2 text-sm text-zinc-300">
-              <div>{game._count.proposals} Proposals</div>
-              <div>•</div>
-              <div>{game._count.discussions} Discussions</div>
-            </div>
-          </div>
-        </CardContent>
-      </Link>
-    </Card>
-  );
-}
-
-function GameCardSkeleton() {
-  return (
-    <Card className="bg-black/40 border-zinc-800">
-      <CardHeader>
-        <Skeleton className="h-6 w-[180px] bg-zinc-700/50" />
-        <Skeleton className="h-4 w-[140px] mt-2 bg-zinc-700/50" />
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-2">
-          <Skeleton className="h-4 w-[100px] bg-zinc-700/50" />
-          <Skeleton className="h-4 w-[160px] bg-zinc-700/50" />
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
+import { getGames } from "./actions";
+import { GameCard } from "./_components/game-card";
 
 async function GamesContent() {
-  const [activeGames, completedGames] = await Promise.all([
-    api.user.getActiveGames() as Promise<GameWithRelations[]>,
-    api.user.getCompletedGames() as Promise<GameWithRelations[]>,
-  ]);
+  const { activeGames, completedGames } = await getGames();
 
   return (
     <div className="space-y-8">
@@ -128,6 +60,23 @@ async function GamesContent() {
         )}
       </div>
     </div>
+  );
+}
+
+function GameCardSkeleton() {
+  return (
+    <Card className="bg-black/40 border-zinc-800">
+      <CardHeader>
+        <Skeleton className="h-6 w-[180px] bg-zinc-700/50" />
+        <Skeleton className="h-4 w-[140px] mt-2 bg-zinc-700/50" />
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-2">
+          <Skeleton className="h-4 w-[100px] bg-zinc-700/50" />
+          <Skeleton className="h-4 w-[160px] bg-zinc-700/50" />
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
