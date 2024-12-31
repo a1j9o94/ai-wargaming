@@ -6,7 +6,7 @@ import { api } from "~/trpc/react";
 export function GameLog({ gameId, initialEntries }: { gameId: string, initialEntries: LogEntry[] }) {
   const [entries, setEntries] = useState(initialEntries);
 
-  api.game.orchestrator.onGameUpdate.useSubscription(
+  api.events.onGameUpdate.useSubscription(
     { gameId },
     {
       onData(update) {

@@ -63,18 +63,18 @@ export function GameContainer({ gameId }: GameContainerProps) {
   const [showCompletionModal, setShowCompletionModal] = useState(false);
 
   // Get current participant first
-  const { data: participant } = api.game.orchestrator.getCurrentParticipant.useQuery(
+  const { data: participant } = api.user.getCurrentParticipant.useQuery(
     { gameId }
   );
 
   // Query game state with participant ID
-  const { data: gameState, refetch: refetchGameState } = api.game.orchestrator.getGameState.useQuery(
+  const { data: gameState, refetch: refetchGameState } = api.orchestration.getGameState.useQuery(
     { gameId, participantId: participant?.id ?? "" },
     { enabled: !!participant }
   );
 
   // Subscribe to game updates
-  api.game.orchestrator.onGameUpdate.useSubscription(
+  api.events.onGameUpdate.useSubscription(
     { gameId, lastEventId: null },
     {
       onData(update) {
@@ -85,7 +85,7 @@ export function GameContainer({ gameId }: GameContainerProps) {
   );
 
   // Subscribe to chat messages if in a discussion
-  api.game.discussion.onNewMessage.useSubscription(
+  api.discussion.onNewMessage.useSubscription(
     { discussionId: currentDiscussion?.id ?? "0", lastEventId: null },
     {
       onData(message: ChatResponse) {
@@ -106,24 +106,24 @@ export function GameContainer({ gameId }: GameContainerProps) {
   );
 
   // Mutations
-  const makeProposalMutation = api.game.proposal.makeProposal.useMutation({
+  const makeProposalMutation = api.proposal.makeProposal.useMutation({
     onSuccess: () => void refetchGameState(),
   });
 
-  const voteMutation = api.game.proposal.vote.useMutation({
+  const voteMutation = api.proposal.vote.useMutation({
     onSuccess: () => void refetchGameState(),
   });
 
-  const updateDiscussionMutation = api.game.discussion.updateDiscussionParticipants.useMutation({
+  const updateDiscussionMutation = api.discussion.updateDiscussionParticipants.useMutation({
     onSuccess: () => void refetchGameState(),
   });
 
-  const advancePhaseMutation = api.game.orchestrator.advancePhase.useMutation({
+  const advancePhaseMutation = api.orchestration.advancePhase.useMutation({
     onSuccess: () => void refetchGameState(),
   });
 
   // Add acknowledgement mutation
-  const acknowledgeCompletionMutation = api.game.orchestrator.acknowledgeCompletion.useMutation({
+  const acknowledgeCompletionMutation = api.orchestration.acknowledgeCompletion.useMutation({
     onSuccess: () => void refetchGameState(),
   });
 
@@ -297,6 +297,8 @@ export function GameContainer({ gameId }: GameContainerProps) {
             phase={gameState.phase as GamePhase}
             currentParticipantId={currentParticipant.id}
             remainingProposals={currentParticipant.remainingProposals}
+            might={currentParticipant.might}
+            economy={currentParticipant.economy}
             onVote={handleVote}
             onAdvancePhase={handleAdvancePhase}
             onOpenDiscussion={handleOpenDiscussion}

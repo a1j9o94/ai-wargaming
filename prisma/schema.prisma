@@ -91,6 +91,7 @@ model GameParticipant {
   civilization              String
   might                     Int        @default(80)
   economy                   Int        @default(80)
+  tradeDealsAccepted        Int        @default(0)
   publicObjective           Objective? @relation("PublicObjective")
   privateObjective          Objective? @relation("PrivateObjective")
   remainingProposals        Int        @default(2)

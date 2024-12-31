@@ -102,4 +102,27 @@ export const userRouter = createTRPCRouter({
         },
       });
     }),
+
+  // Get current participant for a game
+  getCurrentParticipant: protectedProcedure
+    .input(z.object({ gameId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      //check if the game exists and if the user is a participant
+      const game = await ctx.db.game.findUnique({
+        where: { id: input.gameId },
+      });
+      if (!game) {
+        throw new Error("Game not found");
+      }
+
+      const participant = await ctx.db.gameParticipant.findFirst({
+        where: { gameId: input.gameId, userId: ctx.session.user.id },
+      });
+
+      if (!participant) {
+        throw new Error("User is not a participant in this game");
+      }
+
+      return participant;
+    }),
 });

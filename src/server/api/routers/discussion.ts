@@ -5,7 +5,7 @@ import {
 } from "~/server/api/trpc";
 import { EventEmitter, on } from "events";
 import type { PrismaClient } from "@prisma/client";
-import { handleAIMessageResponse } from "./ai-player";
+import { handleAIMessageResponse } from "~/server/ai/ai-player";
 
 // Create event emitter for discussion events
 export const ee = new EventEmitter();

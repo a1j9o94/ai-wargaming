@@ -26,7 +26,7 @@ export function DiscussionDialog({
   const [selectedParticipants, setSelectedParticipants] = useState<string[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const sendMessage = api.game.discussion.sendMessage.useMutation();
+  const sendMessage = api.discussion.sendMessage.useMutation();
 
   // Filter out current player from opponents list
   const filteredOpponents = opponents.filter(opponent => opponent.id !== currentParticipantId);
@@ -36,7 +36,7 @@ export function DiscussionDialog({
     window.location.pathname.split('/')[2] ?? '' : '';
 
   // Get or create discussion when participants change
-  const { data: discussion, isLoading, refetch } = api.game.discussion.getDiscussion.useQuery(
+  const { data: discussion, isLoading, refetch } = api.discussion.getDiscussion.useQuery(
     { 
       gameId,
       participantIds: [currentParticipantId, ...selectedParticipants].sort()
@@ -64,7 +64,7 @@ export function DiscussionDialog({
   }, [discussion, selectedParticipants]);
 
   // Subscribe to new messages
-  api.game.discussion.onNewMessage.useSubscription(
+  api.discussion.onNewMessage.useSubscription(
     { discussionId: discussion?.id ?? '', lastEventId: null },
     {
       onData(data: unknown) {

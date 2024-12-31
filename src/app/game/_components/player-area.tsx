@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import type { GamePhase as GamePhaseType, Proposal, Participant } from "~/types/game";
 import { useState } from "react";
 import { api } from "~/trpc/react";
+import { Sword, TrendingUp } from "lucide-react";
 
 interface PlayerAreaProps {
   phase: GamePhaseType;
@@ -10,6 +11,8 @@ interface PlayerAreaProps {
   currentParticipantId: string;
   opponents: Participant[];
   remainingProposals: number;
+  might: number;
+  economy: number;
   onVote: (proposalId: string, support: boolean) => Promise<void>;
   onAdvancePhase: () => Promise<void>;
   onOpenDiscussion: (participantIds: string[]) => void;
@@ -23,6 +26,8 @@ export function PlayerArea({
   currentParticipantId,
   opponents,
   remainingProposals,
+  might,
+  economy,
   onVote,
   onAdvancePhase,
   onOpenDiscussion,
@@ -32,7 +37,7 @@ export function PlayerArea({
   const [votedProposals, setVotedProposals] = useState<Set<string>>(new Set());
 
   // Fetch objectives for the current participant
-  const { data: objectives } = api.game.orchestrator.getParticipantObjectives.useQuery(
+  const { data: objectives } = api.objectives.getParticipantObjectives.useQuery(
     {
       gameId,
       participantId: currentParticipantId,
@@ -43,7 +48,7 @@ export function PlayerArea({
     }
   );
 
-  api.game.orchestrator.onGameUpdate.useSubscription(
+  api.events.onGameUpdate.useSubscription(
     { gameId },
     {
       onData(update) {
@@ -157,6 +162,24 @@ export function PlayerArea({
         <div className="flex justify-between items-center pb-4 border-b">
           <span className="text-sm font-medium">Remaining Proposals</span>
           <span className="text-lg font-semibold">{remainingProposals}</span>
+        </div>
+
+        {/* Player Stats Section */}
+        <div className="grid grid-cols-2 gap-4 pb-4 border-b">
+          <div className="space-y-2">
+            <span className="text-sm font-medium text-muted-foreground">Military Might</span>
+            <div className="flex items-center space-x-2">
+              <Sword className="w-4 h-4 text-red-500" />
+              <span className="text-lg font-semibold">{might}</span>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <span className="text-sm font-medium text-muted-foreground">Economic Power</span>
+            <div className="flex items-center space-x-2">
+              <TrendingUp className="w-4 h-4 text-green-500" />
+              <span className="text-lg font-semibold">{economy}</span>
+            </div>
+          </div>
         </div>
         
         {/* Objectives Section */}

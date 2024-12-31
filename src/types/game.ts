@@ -18,6 +18,7 @@ export interface Participant {
   isAI: boolean;
   userId: string | null;
   remainingProposals: number;
+  tradeDealsAccepted: number;
 }
 
 export interface LogEntry {

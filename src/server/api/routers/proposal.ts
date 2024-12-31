@@ -5,7 +5,7 @@ import {
 } from "~/server/api/trpc";
 import type { PrismaClient } from "@prisma/client";
 import { ProposalRole } from "~/types/game-constants";
-import { ee } from "./orchestrator";
+import { ee } from "~/server/events/game-events";
 
 // Keep track of last emitted events to prevent duplicates
 const lastEmittedEvents = new Map<string, { id: string; timestamp: number }>();
@@ -161,10 +161,41 @@ export async function createProposal(
   }
 
   // Create log entry - public proposals are visible to everyone, private ones only to participants (not targets)
+  const participantCivs = await db.gameParticipant.findMany({
+    where: {
+      id: { in: input.participants }
+    },
+    select: {
+      civilization: true
+    }
+  });
+
+  const targetCivs = await db.gameParticipant.findMany({
+    where: {
+      id: { in: input.targets }
+    },
+    select: {
+      civilization: true
+    }
+  });
+
+  const participantNames = participantCivs.map(p => p.civilization).join(", ");
+  const targetNames = targetCivs.map(p => p.civilization).join(", ");
+  
+  let logMessage = `${sender.civilization} made a ${input.isPublic ? 'public' : 'private'} ${input.type} proposal`;
+  
+  if (participantNames) {
+    logMessage += ` with ${participantNames}`;
+  }
+  
+  if (targetNames && input.type === "MILITARY") {
+    logMessage += ` against ${targetNames}`;
+  }
+
   await updateGameLog(
     db,
     input.gameId,
-    `${sender.civilization} made a ${input.isPublic ? 'public' : 'private'} ${input.type} proposal`,
+    logMessage,
     input.isPublic,
     input.isPublic ? [] : [sender.id, ...input.participants]
   );
@@ -232,10 +263,42 @@ export async function createVote(
   });
 
   // Create log entry - public votes are visible to everyone, private ones only to proposal participants
+  const voter = await db.gameParticipant.findUnique({
+    where: { id: participant.id },
+    select: { civilization: true }
+  });
+
+  const proposalCreator = await db.gameParticipant.findUnique({
+    where: { id: proposal.creatorId },
+    select: { civilization: true }
+  });
+
+  // Get targets if they exist
+  const targets = await db.proposalParticipant.findMany({
+    where: {
+      proposalId: proposal.id,
+      role: ProposalRole.TARGET
+    },
+    include: {
+      participant: {
+        select: {
+          civilization: true
+        }
+      }
+    }
+  });
+
+  let logMessage = `${voter?.civilization} voted ${input.support ? 'in favor of' : 'against'} ${proposalCreator?.civilization}'s ${proposal.type} proposal`;
+  
+  if (targets.length > 0 && proposal.type === "MILITARY") {
+    const targetNames = targets.map(t => t.participant.civilization).join(", ");
+    logMessage += ` against ${targetNames}`;
+  }
+
   await updateGameLog(
     db,
     proposal.gameId,
-    `${participant.civilization} voted ${input.support ? 'in favor of' : 'against'} the proposal`,
+    logMessage,
     proposal.isPublic,
     proposal.isPublic ? [] : [
       proposal.creatorId,

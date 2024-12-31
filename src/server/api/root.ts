@@ -1,19 +1,24 @@
 import { createTRPCRouter } from "~/server/api/trpc";
+import { orchestrationRouter } from "./routers/orchestration-router";
+import { eventRouter } from "./routers/event-router";
+import { aiPlayerRouter } from "~/server/ai/ai-orchestrator";
 import { discussionRouter } from "./routers/discussion";
-import { orchestratorRouter } from "./routers/orchestrator";
 import { proposalRouter } from "./routers/proposal";
-import { aiPlayerRouter } from "./routers/ai-player";
 import { userRouter } from "./routers/user";
-import { gameRouter } from "./routers/game";
-
+import { objectivesRouter } from "./routers/objectives";
 /**
  * This is the primary router for your server.
  *
  * All routers added in /api/routers should be manually added here.
  */
 export const appRouter = createTRPCRouter({
-  game: gameRouter,
+  orchestration: orchestrationRouter,
+  events: eventRouter,
+  ai: aiPlayerRouter,
+  discussion: discussionRouter,
+  proposal: proposalRouter,
   user: userRouter,
+  objectives: objectivesRouter,
 });
 
 // export type definition of API
