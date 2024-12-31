@@ -1,4 +1,4 @@
-import type { Proposal, ProposalParticipant, GameParticipant } from "@prisma/client";
+import type { Proposal, ProposalParticipant } from "@prisma/client";
 import { type PrismaClient } from "@prisma/client";
 import { GamePhase } from "~/types/game";
 import { ProposalRole } from "~/types/game-constants";
@@ -10,7 +10,6 @@ import OpenAI from "openai";
 import { messageResponsePrompt, proposalGenerationPrompt, votingPrompt } from "./ai-prompts";
 import { z } from "zod";
 import { zodResponseFormat } from "openai/helpers/zod";
-import { api } from "~/trpc/server";
 
 const ProposalOutputSchema = z.object({
   proposals: z.array(z.object({
@@ -26,7 +25,8 @@ const VotingOutputSchema = z.object({
   votes: z.array(z.object({
     proposalId: z.string(),
     support: z.boolean(),
-    reasoning: z.string()
+    privateReasoning: z.string(),
+    messageToParticipants: z.string()
   }))
 });
 
@@ -302,7 +302,8 @@ async function handleVotingPhase(
       console.log(`[AI-${aiParticipant.id}] Processing vote:`, {
         proposalId: vote.proposalId,
         support: vote.support,
-        reasoning: vote.reasoning
+        privateReasoning: vote.privateReasoning,
+        messageToParticipants: vote.messageToParticipants
       });
 
       // Validate that the proposal exists in our pending proposals
@@ -329,13 +330,13 @@ async function handleVotingPhase(
         participantIds: participantIds
       });
 
-      console.log(`[AI-${aiParticipant.id}] Voting on proposal ${proposal.id} with discussion ${discussion?.id} and reasoning: ${vote.reasoning}`);
+      console.log(`[AI-${aiParticipant.id}] Voting on proposal ${proposal.id} with discussion ${discussion?.id} and reasoning: ${vote.privateReasoning}`);
 
       if (discussion) {
         await createMessage(db, {
           discussionId: discussion.id,
           senderId: aiParticipant.id,
-          content: vote.reasoning,
+          content: vote.messageToParticipants,
         });
       }
     }

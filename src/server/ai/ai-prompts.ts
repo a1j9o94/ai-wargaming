@@ -77,7 +77,7 @@ export const votingPrompt = (objectives: Objective[], game: Game, aiParticipant:
 
     For each proposal listed above, provide a vote using the exact Proposal ID shown.
     Vote true to support a proposal, false to oppose it.
-    Provide a brief reasoning for each vote.
+    Provide a brief reasoning for each vote and a message to the participants of the proposal saying why you voted the way you did (note you can lie about this message).
     
     Make sure to vote on ALL proposals listed above.`;
 }
