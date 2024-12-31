@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
 import { emitGameEvent } from "../events/game-events";
 
 export async function updateGameLog(

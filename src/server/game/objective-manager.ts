@@ -84,6 +84,11 @@ export async function evaluateObjectives(
   gameId: string,
   isGameEnd = false
 ) {
+  // Only evaluate objectives at the end of the game
+  if (!isGameEnd) {
+    return;
+  }
+
   // Get all participants with their objectives
   const participants = await db.gameParticipant.findMany({
     where: { gameId },
@@ -187,10 +192,9 @@ export async function evaluateObjectives(
     await db.$transaction(updates);
   }
 
-  // If this is the final evaluation, calculate winner
-  if (isGameEnd) {
-    // Mark any remaining PENDING objectives as FAILED
-    const failUpdates = [];
+  // Calculate winner
+  // Mark any remaining PENDING objectives as FAILED
+  const failUpdates = [];
     for (const participant of participants) {
       if (participant.publicObjective?.status === "PENDING") {
         failUpdates.push(
@@ -208,7 +212,6 @@ export async function evaluateObjectives(
           })
         );
       }
-    }
     if (failUpdates.length > 0) {
       await db.$transaction(failUpdates);
     }

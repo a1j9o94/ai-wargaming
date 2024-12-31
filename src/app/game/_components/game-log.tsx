@@ -10,7 +10,9 @@ export function GameLog({ gameId, initialEntries }: { gameId: string, initialEnt
     { gameId },
     {
       onData(update) {
-        setEntries(prev => [...prev, update]);
+        if ('time' in update && 'event' in update) {
+          setEntries(prev => [...prev, update as LogEntry]);
+        }
       },
     }
   );

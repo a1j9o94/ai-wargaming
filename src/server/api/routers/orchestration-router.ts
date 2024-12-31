@@ -9,12 +9,54 @@ import { assignObjectives } from "~/server/game/objective-manager";
 import { updateGameLog } from "~/server/game/logging";
 import { triggerAIActions } from "~/server/ai/ai-orchestrator";
 import { advanceGamePhase } from "~/server/game/state-manager";
+import type { PrismaClient } from "@prisma/client";
 
 // Input type for creating a new game
 const createGameInput = z.object({
   civilization: z.string(),
   numberOfRounds: z.number().optional(),
 });
+
+export async function getGameContext(db: PrismaClient, gameId: string, participantId: string) {
+  const game = await db.game.findUnique({
+    where: { id: gameId },
+    include: {
+      participants: {
+        where: {
+          id: participantId,
+        },
+      },
+      discussions: {
+        where: {
+          participants: {
+            some: {
+              id: participantId,
+            },
+          },
+        },
+      },
+      proposals: {
+        where: {
+          participants: {
+            some: {
+              participantId: participantId,
+            },
+          },
+        },
+      },
+      logEntries: {
+        where: {
+          visibleTo: {
+            some: {
+              id: participantId,
+            },
+          },
+        },
+      },
+    },
+  });
+  return game;
+}
 
 export const orchestrationRouter = createTRPCRouter({
   // Create a new game
@@ -142,6 +184,13 @@ export const orchestrationRouter = createTRPCRouter({
       });
     }),
 
+  // get the game context for a given participant, filter out discussions, proposals, and log entries that the participant is not authorized to see
+  getGameContext: protectedProcedure
+    .input(z.object({ gameId: z.string(), participantId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      return getGameContext(ctx.db, input.gameId, input.participantId);
+    }),
+  
   // Add acknowledgement mutation
   acknowledgeCompletion: protectedProcedure
     .input(z.object({
@@ -166,9 +215,11 @@ export const orchestrationRouter = createTRPCRouter({
         data: { hasAcknowledgedCompletion: true },
       });
     }),
-    markGameAsCompleted: protectedProcedure
-    .input(z.object({ gameId: z.string() }))
-    .mutation(async ({ ctx, input }) => {
+
+  // Mark game as completed
+  markGameAsCompleted: protectedProcedure
+      .input(z.object({ gameId: z.string() }))
+      .mutation(async ({ ctx, input }) => {
       return ctx.db.game.update({
         where: { id: input.gameId },
         data: { phase: GamePhase.COMPLETED },

@@ -19,9 +19,9 @@ export function PhaseAnnouncement({ show, onClose, round, phase }: PhaseAnnounce
     PROPOSAL: "Each player may make up to 2 proposals",
     DISCUSSION: "Players discuss the current proposals",
     VOTING: "Players vote on all active proposals",
-    RESOLUTION: "Resolving the outcomes of votes",
+    RESOLVE: "Resolving the outcomes of votes",
     COMPLETED: "Game has ended"
-  };
+  } as const;
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">

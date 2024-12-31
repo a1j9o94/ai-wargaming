@@ -8,6 +8,8 @@ export function AuthWrapper({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { data: session, status } = useSession();
 
+  console.log(session, status);
+
   useEffect(() => {
     // Only redirect if we're sure there's no session and loading is complete
     if (status === "unauthenticated") {

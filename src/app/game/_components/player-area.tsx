@@ -52,7 +52,7 @@ export function PlayerArea({
     { gameId },
     {
       onData(update) {
-        if (update.type === 'CHAT') {
+        if ('type' in update && update.type === 'CHAT' && 'event' in update) {
           setPendingMessages(prev => [...prev, String(update.event)]);
           // Clear message after 3 seconds
           setTimeout(() => {

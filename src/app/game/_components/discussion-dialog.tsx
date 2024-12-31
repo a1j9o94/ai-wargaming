@@ -97,12 +97,13 @@ export function DiscussionDialog({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (message.trim() && discussion?.id) {
+      const messageContent = message.trim();
+      setMessage(""); // Clear message immediately
       await sendMessage.mutateAsync({
         discussionId: discussion.id,
-        content: message,
+        content: messageContent,
         senderId: currentParticipantId
       });
-      setMessage("");
     }
   };
 
