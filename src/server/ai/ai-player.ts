@@ -10,6 +10,7 @@ import OpenAI from "openai";
 import { messageResponsePrompt, proposalGenerationPrompt, votingPrompt } from "./ai-prompts";
 import { z } from "zod";
 import { zodResponseFormat } from "openai/helpers/zod";
+import { getVisibleObjectives } from "../api/routers/objectives";
 
 const ProposalOutputSchema = z.object({
   proposals: z.array(z.object({
@@ -115,14 +116,7 @@ async function handleProposalPhase(
     }
 
     // Get AI's objectives
-    const objectives = await db.objective.findMany({
-      where: {
-        OR: [
-          { publicForId: aiParticipant.id },
-          { privateForId: aiParticipant.id }
-        ],
-      },
-    });
+    const objectives = await getVisibleObjectives(db, gameId, aiParticipant.id);
 
     // Generate the prompt and function schema
     const prompt = proposalGenerationPrompt(objectives, game, fullAiParticipant, otherParticipants);
@@ -256,14 +250,7 @@ async function handleVotingPhase(
     }
 
     // Get AI's objectives
-    const objectives = await db.objective.findMany({
-      where: {
-        OR: [
-          { publicForId: aiParticipant.id },
-          { privateForId: aiParticipant.id }
-        ],
-      },
-    });
+    const objectives = await getVisibleObjectives(db, gameId, aiParticipant.id);
 
     // Format proposals for the prompt
     const proposalsForAI: ProposalForAI[] = pendingProposals.map(p => ({
@@ -379,11 +366,7 @@ async function determineResponse(
     }
 
     //get the players objectives
-    const objectives = await db.objective.findMany({
-        where: {
-            OR: [{ publicForId: aiParticipantId }, { privateForId: aiParticipantId }],
-        },
-    });
+    const objectives = await getVisibleObjectives(db, gameId, aiParticipantId);
 
     //write prompt for the AI to respond to the message with the game state for context
     const prompt = messageResponsePrompt(objectives, game, discussion.participants, discussion.messages);
