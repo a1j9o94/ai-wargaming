@@ -29,7 +29,10 @@ export const proposalGenerationPrompt = (objectives: Objective[], game: Game, ai
 
     Based on the game state and your objectives, generate between 0-2 proposals.
     Remember that proposals can fail and have consequences, so choose wisely.
-    It's also valid to make no proposals if you don't see any good opportunities.`;
+    It's also valid to make no proposals if you don't see any good opportunities.
+    
+    For each proposal, discuss your reasoning for the proposal, and compose a message to the participants of the proposal, to convince them to vote for your proposal. Remember that you can lie about this message. E.g. you can tell two people that you will help them both attack each other, when in reality you will only attack one of them.
+    `;
 }
 
 export const messageResponsePrompt = (objectives: Objective[], game: Game, participants: GameParticipant[], messages: ChatMessage[]) => {

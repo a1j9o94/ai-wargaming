@@ -78,6 +78,14 @@ export function PlayerArea({
 
   const renderPhaseContent = () => {
     switch (phase) {
+      case "SETUP":
+        return (
+          <div className="space-y-4">
+            <p>Setup phase</p>
+            <Button onClick={() => void onAdvancePhase()}>Advance Phase</Button>
+          </div>
+        );
+
       case "PROPOSAL":
         return (
           <div className="space-y-4">

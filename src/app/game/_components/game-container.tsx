@@ -312,7 +312,8 @@ export function GameContainer({ gameId }: GameContainerProps) {
               isAI: p.isAI,
               userId: p.userId,
               remainingProposals: p.remainingProposals,
-              tradeDealsAccepted: p.tradeDealsAccepted
+              tradeDealsAccepted: p.tradeDealsAccepted,
+              publicObjective: p.publicObjective
             }))}
             proposals={gameState.proposals.map(p => ({
               id: p.id,
@@ -347,7 +348,8 @@ export function GameContainer({ gameId }: GameContainerProps) {
               isAI: p.isAI,
               userId: p.userId,
               remainingProposals: p.remainingProposals,
-              tradeDealsAccepted: p.tradeDealsAccepted
+              tradeDealsAccepted: p.tradeDealsAccepted,
+              publicObjective: p.publicObjective
             }))}
             gameId={gameId}
             currentParticipantId={currentParticipant.id}

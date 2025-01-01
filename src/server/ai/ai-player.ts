@@ -18,7 +18,8 @@ const ProposalOutputSchema = z.object({
     participants: z.array(z.string()),
     targets: z.array(z.string()),
     isPublic: z.boolean(),
-    reasoning: z.string()
+    reasoning: z.string(),
+    messageToParticipants: z.string()
   }))
 });
 
@@ -167,6 +168,20 @@ async function handleProposalPhase(
         description: `${aiParticipant.civilization} ${proposal.reasoning}`,
         isPublic: proposal.isPublic,
       });
+
+      //get the discussion with the proposal participants
+      const discussion = await getDiscussion(db, {
+        gameId: gameId,
+        participantIds: participantIds.map(p => p.id)
+      });
+
+      if (discussion) {
+        await createMessage(db, {
+          discussionId: discussion.id,
+          senderId: aiParticipant.id,
+          content: proposal.messageToParticipants,
+        });
+      }
     }
   } catch (error) {
     console.error('Error in handleProposalPhase:', error);

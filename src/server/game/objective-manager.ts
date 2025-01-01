@@ -14,14 +14,14 @@ export async function assignObjectives(
 ) {
   const updates = [];
 
-  // Get public objective, with fallback to default
-  const availablePublicObjectives = PUBLIC_OBJECTIVES ?? [];
-  const selectedPublicObjective: ObjectiveDefinition = availablePublicObjectives.length > 0
-    ? availablePublicObjectives[Math.floor(Math.random() * availablePublicObjectives.length)] ?? DEFAULT_PUBLIC_OBJECTIVE
-    : DEFAULT_PUBLIC_OBJECTIVE;
-
   // For each participant
   for (const participant of participants) {
+    // Get public objective, with fallback to default
+    const availablePublicObjectives = PUBLIC_OBJECTIVES ?? [];
+    const selectedPublicObjective: ObjectiveDefinition = availablePublicObjectives.length > 0
+      ? availablePublicObjectives[Math.floor(Math.random() * availablePublicObjectives.length)] ?? DEFAULT_PUBLIC_OBJECTIVE
+      : DEFAULT_PUBLIC_OBJECTIVE;
+
     // Create their public objective
     updates.push(
       db.objective.create({

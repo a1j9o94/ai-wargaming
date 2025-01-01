@@ -3,7 +3,20 @@ import { Button } from "@/components/ui/button";
 import { type Participant } from "~/types/game";
 
 interface OpponentCardProps {
-  opponent: Participant;
+  opponent: Participant & {
+    publicObjective?: {
+      type: string;
+      status: string;
+      description: string;
+      isPublic: boolean;
+      id: string;
+      targetMight: number | null;
+      targetEconomy: number | null;
+      targetParticipantId: string | null;
+      publicForId: string | null;
+      privateForId: string | null;
+    } | null;
+  };
   currentParticipantId: string;
   onOpenDiscussion: (participantIds: string[]) => void;
   onOpenProposal: (recipientIds: string[]) => void;
@@ -50,6 +63,35 @@ export function OpponentCard({
             <span className="font-semibold text-[hsl(280,100%,70%)]">{opponent.economy}</span>
           </div>
         </div>
+
+        {/* Public Objective */}
+        {opponent.publicObjective && (
+          <div className="mb-3 p-2 rounded-lg border border-white/10 bg-white/5">
+            <div className="flex justify-between items-start mb-1">
+              <span className="text-xs font-medium text-white/70">Public Objective</span>
+              <span className={`text-xs px-2 py-0.5 rounded-full ${
+                opponent.publicObjective.status === 'COMPLETED' 
+                  ? 'bg-green-500/10 text-green-500'
+                  : opponent.publicObjective.status === 'FAILED'
+                  ? 'bg-red-500/10 text-red-500'
+                  : 'bg-blue-500/10 text-blue-500'
+              }`}>
+                {opponent.publicObjective.status}
+              </span>
+            </div>
+            <p className="text-xs text-white/60">{opponent.publicObjective.description}</p>
+            {(opponent.publicObjective.targetMight ?? opponent.publicObjective.targetEconomy) && (
+              <div className="flex gap-2 text-xs text-white/50 mt-1">
+                {opponent.publicObjective.targetMight && (
+                  <span>Target Might: {opponent.publicObjective.targetMight}</span>
+                )}
+                {opponent.publicObjective.targetEconomy && (
+                  <span>Target Economy: {opponent.publicObjective.targetEconomy}</span>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Quick Actions */}
         <div className="flex space-x-3 mt-auto">

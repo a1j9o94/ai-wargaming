@@ -65,7 +65,7 @@ export const orchestrationRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const game = await ctx.db.game.create({
         data: {
-          phase: GamePhase.PROPOSAL,
+          phase: GamePhase.SETUP,
           currentRound: 1,
           numberOfRounds: input.numberOfRounds ?? NUMBER_OF_ROUNDS,
           participants: {
@@ -111,7 +111,7 @@ export const orchestrationRouter = createTRPCRouter({
       await updateGameLog(ctx.db, game.id, `Game started with ${input.civilization}`);
 
       // Trigger initial AI actions
-      await triggerAIActions(ctx.db, game.id, GamePhase.PROPOSAL);
+      await triggerAIActions(ctx.db, game.id, GamePhase.SETUP);
 
       return game;
     }),
