@@ -165,7 +165,7 @@ async function handleProposalPhase(
         participants: participantIds.map(p => p.id),
         targets: targetIds.map(t => t.id),
         type: proposal.type,
-        description: `${aiParticipant.civilization} ${proposal.reasoning}`,
+        description: proposal.messageToParticipants,
         isPublic: proposal.isPublic,
       });
 
