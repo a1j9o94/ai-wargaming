@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import type { GamePhase as GamePhaseType, Proposal, Participant } from "~/types/game";
 import { useState } from "react";
 import { api } from "~/trpc/react";
-import { Sword, TrendingUp } from "lucide-react";
+import { Sword, TrendingUp, Loader2 } from "lucide-react";
 
 interface PlayerAreaProps {
   phase: GamePhaseType;
@@ -17,6 +17,26 @@ interface PlayerAreaProps {
   onAdvancePhase: () => Promise<void>;
   onOpenDiscussion: (participantIds: string[]) => void;
   onOpenProposal: (recipientIds: string[]) => void;
+}
+
+interface AdvancePhaseButtonProps {
+  onClick: () => Promise<void>;
+  isLoading: boolean;
+  variant?: "default" | "outline";
+  children: React.ReactNode;
+}
+
+function AdvancePhaseButton({ onClick, isLoading, variant = "default", children }: AdvancePhaseButtonProps) {
+  return (
+    <Button 
+      variant={variant}
+      onClick={onClick}
+      disabled={isLoading}
+    >
+      {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+      {children}
+    </Button>
+  );
 }
 
 export function PlayerArea({
@@ -34,6 +54,7 @@ export function PlayerArea({
   onOpenProposal,
 }: PlayerAreaProps) {
   const [pendingMessages, setPendingMessages] = useState<string[]>([]);
+  const [isAdvancing, setIsAdvancing] = useState(false);
 
   // Fetch objectives for the current participant
   const { data: objectives } = api.objectives.getParticipantObjectives.useQuery(
@@ -76,13 +97,27 @@ export function PlayerArea({
     await onVote(proposalId, support);
   };
 
+  const handleAdvancePhase = async () => {
+    setIsAdvancing(true);
+    try {
+      await onAdvancePhase();
+    } finally {
+      setIsAdvancing(false);
+    }
+  };
+
   const renderPhaseContent = () => {
     switch (phase) {
       case "SETUP":
         return (
           <div className="space-y-4">
             <p>Setup phase</p>
-            <Button onClick={() => void onAdvancePhase()}>Advance Phase</Button>
+            <AdvancePhaseButton
+              onClick={() => handleAdvancePhase()}
+              isLoading={isAdvancing}
+            >
+              Advance Phase
+            </AdvancePhaseButton>
           </div>
         );
 
@@ -93,9 +128,13 @@ export function PlayerArea({
               <Button variant="outline" onClick={handleOpenGroupProposal}>
                 Make Proposal
               </Button>
-              <Button variant="outline" onClick={() => void onAdvancePhase()}>
+              <AdvancePhaseButton
+                onClick={() => handleAdvancePhase()}
+                isLoading={isAdvancing}
+                variant="outline"
+              >
                 Pass
-              </Button>
+              </AdvancePhaseButton>
               <Button variant="outline" onClick={handleOpenGroupDiscussion}>
                 Discuss
               </Button>
@@ -132,7 +171,12 @@ export function PlayerArea({
               {unvotedProposals.length === 0 ? (
                 <div>
                   <p className="text-sm text-muted-foreground">No pending proposals to vote on.</p>
-                  <Button onClick={() => void onAdvancePhase()}>Advance Phase</Button>
+                  <AdvancePhaseButton
+                    onClick={() => handleAdvancePhase()}
+                    isLoading={isAdvancing}
+                  >
+                    Advance Phase
+                  </AdvancePhaseButton>
                 </div>
               ) : (
                 unvotedProposals.map((proposal) => (
@@ -165,7 +209,12 @@ export function PlayerArea({
       case "RESOLVE":
         return (
           <div className="space-y-4">
-            <Button onClick={() => void onAdvancePhase()}>Resolve Round</Button>
+            <AdvancePhaseButton
+              onClick={() => handleAdvancePhase()}
+              isLoading={isAdvancing}
+            >
+              Resolve Round
+            </AdvancePhaseButton>
           </div>
         );
 
@@ -173,7 +222,12 @@ export function PlayerArea({
         return (
           <div className="space-y-4">
             <p>Waiting for other players...</p>
-            <Button onClick={() => void onAdvancePhase()}>Advance Phase</Button>
+            <AdvancePhaseButton
+              onClick={() => handleAdvancePhase()}
+              isLoading={isAdvancing}
+            >
+              Advance Phase
+            </AdvancePhaseButton>
           </div>
         );
     }

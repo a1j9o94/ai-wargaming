@@ -30,6 +30,12 @@ const getDiscussionInput = z.object({
   participantIds: z.array(z.string()),
 });
 
+// Input type for getting all discussions
+const getAllDiscussionsInput = z.object({
+  gameId: z.string(),
+  participantId: z.string(),
+});
+
 // Helper function to trigger AI responses to a message
 async function triggerAIResponses(
   db: PrismaClient,
@@ -255,5 +261,31 @@ export const discussionRouter = createTRPCRouter({
         console.error('Error processing message:', error);
         yield { type: 'error', message: 'Error processing message' };
       }
+    }),
+
+  // Get all discussions for a participant
+  getAllDiscussions: protectedProcedure
+    .input(getAllDiscussionsInput)
+    .query(async ({ ctx, input }) => {
+      const discussions = await ctx.db.discussion.findMany({
+        where: {
+          gameId: input.gameId,
+          participants: {
+            some: {
+              id: input.participantId
+            }
+          }
+        },
+        include: {
+          participants: true,
+          messages: {
+            orderBy: {
+              createdAt: 'asc'
+            }
+          }
+        }
+      });
+
+      return discussions;
     }),
 });
